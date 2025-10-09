@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'venue_detail_page.dart';
 
 class SearchResultsPage extends StatefulWidget {
@@ -110,6 +111,81 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
       return false;
     }).toList();
+  }
+
+  Widget _buildVenueImage(String? imageUrl, {double? height, double? width}) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Container(
+        height: height,
+        width: width,
+        color: Colors.grey[200],
+        child: Icon(
+          Icons.location_on,
+          size: 50,
+          color: Colors.grey[500],
+        ),
+      );
+    }
+
+    // Check if it's a base64 data URL
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        // Extract base64 string
+        final base64String = imageUrl.split(',')[1];
+        final bytes = base64Decode(base64String);
+
+        return Image.memory(
+          bytes,
+          height: height,
+          width: width,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              height: height,
+              width: width,
+              color: Colors.grey[200],
+              child: Icon(
+                Icons.location_on,
+                size: 50,
+                color: Colors.grey[500],
+              ),
+            );
+          },
+        );
+      } catch (e) {
+        print('Error decoding base64 image: $e');
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.error,
+            size: 50,
+            color: Colors.grey[500],
+          ),
+        );
+      }
+    }
+
+    // Regular network URL
+    return Image.network(
+      imageUrl,
+      height: height,
+      width: width,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.location_on,
+            size: 50,
+            color: Colors.grey[500],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -351,37 +427,6 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     );
   }
 
-  Widget _buildTipTile(String tip) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue[100]!),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.lightbulb_outline,
-            color: Colors.blue[600],
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              tip,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.blue[800],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildNoResults() {
     return Center(
       child: Column(
@@ -456,7 +501,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Venue image
+            // Venue image - UPDATED
             Container(
               height: 180,
               width: double.infinity,
@@ -471,29 +516,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                   ],
                 ),
               ),
-              child: venue['imageUrl'] != null
-                  ? ClipRRect(
+              child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  venue['imageUrl'],
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Icon(
-                        Icons.location_on,
-                        size: 50,
-                        color: Colors.grey[500],
-                      ),
-                    );
-                  },
-                ),
-              )
-                  : Center(
-                child: Icon(
-                  Icons.location_on,
-                  size: 50,
-                  color: Colors.grey[500],
-                ),
+                child: _buildVenueImage(venue['imageUrl'], height: 180, width: double.infinity),
               ),
             ),
 
@@ -546,7 +571,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
                   const SizedBox(height: 12),
 
-                  // Venue name - highlight search term
+                  // Venue name
                   Text(
                     venue['name'] ?? 'Unknown Venue',
                     style: const TextStyle(

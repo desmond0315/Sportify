@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import '../services/messaging_service.dart';
 import '../models/message_model.dart';
+import '../services/encryption_service.dart';
+
 
 class ChatPage extends StatefulWidget {
   final String chatId;
@@ -320,11 +322,16 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildMessageBubble(MessageModel message, bool isMe) {
-    final isSystem = message.messageType == 'system';
+    final isSystem = message.messageType == 'system' || message.senderRole == 'system';
 
     if (isSystem) {
       return _buildSystemMessage(message);
     }
+
+    // Decrypt user messages (system messages are already plain text)
+    final decryptedMessage = message.iv.isNotEmpty
+        ? EncryptionService.decryptMessage(message.message, message.iv, widget.chatId)
+        : message.message;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -375,7 +382,7 @@ class _ChatPageState extends State<ChatPage> {
                     ],
                   ),
                   child: Text(
-                    message.message,
+                    decryptedMessage,
                     style: TextStyle(
                       fontSize: 16,
                       color: isMe ? Colors.white : const Color(0xFF2D3748),
@@ -384,12 +391,17 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _formatMessageTime(message.timestamp),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatMessageTime(message.timestamp),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

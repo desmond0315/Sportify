@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'venue_detail_page.dart';
 
 class VenuesPage extends StatefulWidget {
@@ -99,6 +100,81 @@ class _VenuesPageState extends State<VenuesPage> {
         return matchesSearch && matchesSport && matchesLocation;
       }).toList();
     });
+  }
+
+  Widget _buildVenueImage(String? imageUrl, {double? height, double? width}) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Container(
+        height: height,
+        width: width,
+        color: Colors.grey[200],
+        child: Icon(
+          Icons.location_on,
+          size: 50,
+          color: Colors.grey[500],
+        ),
+      );
+    }
+
+    // Check if it's a base64 data URL
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        // Extract base64 string
+        final base64String = imageUrl.split(',')[1];
+        final bytes = base64Decode(base64String);
+
+        return Image.memory(
+          bytes,
+          height: height,
+          width: width,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              height: height,
+              width: width,
+              color: Colors.grey[200],
+              child: Icon(
+                Icons.location_on,
+                size: 50,
+                color: Colors.grey[500],
+              ),
+            );
+          },
+        );
+      } catch (e) {
+        print('Error decoding base64 image: $e');
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.error,
+            size: 50,
+            color: Colors.grey[500],
+          ),
+        );
+      }
+    }
+
+    // Regular network URL
+    return Image.network(
+      imageUrl,
+      height: height,
+      width: width,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.location_on,
+            size: 50,
+            color: Colors.grey[500],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -508,29 +584,9 @@ class _VenuesPageState extends State<VenuesPage> {
                   ],
                 ),
               ),
-              child: venue['imageUrl'] != null
-                  ? ClipRRect(
+              child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  venue['imageUrl'],
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Icon(
-                        Icons.location_on,
-                        size: 50,
-                        color: Colors.grey[500],
-                      ),
-                    );
-                  },
-                ),
-              )
-                  : Center(
-                child: Icon(
-                  Icons.location_on,
-                  size: 50,
-                  color: Colors.grey[500],
-                ),
+                child: _buildVenueImage(venue['imageUrl'], height: 180, width: double.infinity),
               ),
             ),
 

@@ -1,11 +1,10 @@
-// Updated court_booking_page.dart with new flow: Date -> Time -> Duration -> Available Courts
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'my_bookings_page.dart';
 import 'services/notification_service.dart';
 import '../utils/timezone_helper.dart';
+import 'venue_payment_page.dart';
 
 class CourtBookingPage extends StatefulWidget {
   final Map<String, dynamic> venue;
@@ -36,11 +35,7 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
   List<Map<String, dynamic>> _availableCourts = [];
   Map<String, dynamic>? _currentUserData;
 
-  final List<String> _timeSlots = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
-    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
-    '18:00', '19:00', '20:00', '21:00', '22:00',
-  ];
+  List<String> _timeSlots = []; // Will be populated based on operating hours
 
   @override
   void initState() {
@@ -49,8 +44,51 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
     final malaysiaTime = TimezoneHelper.getMalaysiaTime();
     _selectedDate = DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
 
+    // Generate time slots based on operating hours
+    _timeSlots = _generateTimeSlotsFromOperatingHours();
+
     _checkTimeSlotAvailability();
     _loadCurrentUserData();
+  }
+
+  List<String> _generateTimeSlotsFromOperatingHours() {
+    if (widget.venue['operatingHours'] == null) {
+      // Fallback to default hours if not set
+      return [
+        '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
+        '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
+        '18:00', '19:00', '20:00', '21:00', '22:00',
+      ];
+    }
+
+    final now = DateTime.now();
+    final days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    final today = days[_selectedDate.weekday - 1];
+
+    final todayHours = widget.venue['operatingHours'][today];
+
+    if (todayHours == null || todayHours['closed'] == true) {
+      return []; // Return empty if venue is closed
+    }
+
+    final openTime = todayHours['open'] ?? '';
+    final closeTime = todayHours['close'] ?? '';
+
+    if (openTime.isEmpty || closeTime.isEmpty) {
+      return [];
+    }
+
+    // Parse opening and closing times
+    final openHour = int.parse(openTime.split(':')[0]);
+    final closeHour = int.parse(closeTime.split(':')[0]);
+
+    // Generate time slots from open to close
+    List<String> slots = [];
+    for (int hour = openHour; hour < closeHour; hour++) {
+      slots.add('${hour.toString().padLeft(2, '0')}:00');
+    }
+
+    return slots;
   }
 
   Future<void> _loadCurrentUserData() async {
@@ -438,6 +476,8 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
                       _selectedDuration = 1; // Reset duration
                       _selectedCourt = null;
                       _availableCourts = [];
+                      // Regenerate time slots for the new date
+                      _timeSlots = _generateTimeSlotsFromOperatingHours();
                     });
                     _checkTimeSlotAvailability();
                   },
@@ -529,89 +569,121 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
             ],
           ),
           const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 2.2,
-            ),
-            itemCount: _timeSlots.length,
-            itemBuilder: (context, index) {
-              final timeSlot = _timeSlots[index];
-              final isAvailable = _timeSlotAvailability[timeSlot] ?? true;
-              final isSelected = _selectedTimeSlot == timeSlot;
-              final isPastTime = TimezoneHelper.isTimeSlotInPast(_selectedDate, timeSlot);
 
-              return GestureDetector(
-                onTap: isAvailable && !isPastTime
-                    ? () {
-                  setState(() {
-                    _selectedTimeSlot = timeSlot;
-                    _selectedDuration = 1; // Reset duration to 1 hour
-                    _selectedCourt = null; // Reset court selection
-                  });
-                  _checkAvailableCourts();
-                }
-                    : null,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: !isAvailable || isPastTime
-                        ? Colors.grey[200]
-                        : isSelected
-                        ? const Color(0xFFFF8A50)
-                        : Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: !isAvailable || isPastTime
-                          ? Colors.grey[300]!
-                          : isSelected
-                          ? const Color(0xFFFF8A50)
-                          : Colors.grey[300]!,
-                    ),
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: Text(
-                          timeSlot,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: !isAvailable || isPastTime
-                                ? Colors.grey[500]
-                                : isSelected
-                                ? Colors.white
-                                : const Color(0xFF2D3748),
-                          ),
+          // Show closed message OR time slots grid
+          if (_timeSlots.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 0),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.red[700], size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Venue is closed on this day',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.red[700],
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (isPastTime && TimezoneHelper.isToday(_selectedDate))
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.access_time,
-                              color: Colors.white,
-                              size: 10,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 2.2,
+              ),
+              itemCount: _timeSlots.length,
+              itemBuilder: (context, index) {
+                final timeSlot = _timeSlots[index];
+                final isAvailable = _timeSlotAvailability[timeSlot] ?? true;
+                final isSelected = _selectedTimeSlot == timeSlot;
+                final isPastTime = TimezoneHelper.isTimeSlotInPast(_selectedDate, timeSlot);
+
+                return GestureDetector(
+                  onTap: isAvailable && !isPastTime
+                      ? () {
+                    setState(() {
+                      _selectedTimeSlot = timeSlot;
+                      _selectedDuration = 1;
+                      _selectedCourt = null;
+                    });
+                    _checkAvailableCourts();
+                  }
+                      : null,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: !isAvailable || isPastTime
+                          ? Colors.grey[200]
+                          : isSelected
+                          ? const Color(0xFFFF8A50)
+                          : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: !isAvailable || isPastTime
+                            ? Colors.grey[300]!
+                            : isSelected
+                            ? const Color(0xFFFF8A50)
+                            : Colors.grey[300]!,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Text(
+                            timeSlot,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: !isAvailable || isPastTime
+                                  ? Colors.grey[500]
+                                  : isSelected
+                                  ? Colors.white
+                                  : const Color(0xFF2D3748),
                             ),
                           ),
                         ),
-                    ],
+                        if (isPastTime && TimezoneHelper.isToday(_selectedDate))
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.access_time,
+                                color: Colors.white,
+                                size: 10,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          if (TimezoneHelper.isToday(_selectedDate))
+                );
+              },
+            ),
+
+          if (TimezoneHelper.isToday(_selectedDate) && _timeSlots.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Row(
@@ -827,6 +899,9 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
               children: _availableCourts.map((court) {
                 final isSelected = _selectedCourt?['id'] == court['id'];
 
+                // Get court name - use courtName if available, otherwise fallback to Court + number
+                final courtName = court['courtName'] ?? 'Court ${court['courtNumber'] ?? 'N/A'}';
+
                 return GestureDetector(
                   onTap: () {
                     setState(() {
@@ -865,7 +940,7 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Court ${court['courtNumber'] ?? 'N/A'}',
+                                courtName,  // FIXED: Now uses actual court name
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -907,6 +982,9 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
     final pricePerHour = _selectedCourt!['pricePerHour'] ?? widget.venue['pricePerHour'] ?? 0;
     final totalPrice = pricePerHour * _selectedDuration;
 
+    // Get court name properly
+    final courtName = _selectedCourt!['courtName'] ?? 'Court ${_selectedCourt!['courtNumber'] ?? 'N/A'}';
+
     return Container(
       color: Colors.white,
       margin: const EdgeInsets.only(top: 8),
@@ -926,7 +1004,7 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
             child: Column(
               children: [
                 _buildSummaryRow('Venue', widget.venue['name'] ?? 'Unknown'),
-                _buildSummaryRow('Court', 'Court ${_selectedCourt!['courtNumber'] ?? 'N/A'}'),
+                _buildSummaryRow('Court', courtName),  // FIXED: Now shows actual court name
                 _buildSummaryRow('Date', _formatDate(_selectedDate)),
                 _buildSummaryRow('Time', '$_selectedTimeSlot - ${_getEndTimeForDuration(_selectedTimeSlot!, _selectedDuration)}'),
                 _buildSummaryRow('Duration', '$_selectedDuration hour${_selectedDuration > 1 ? 's' : ''}'),
@@ -1090,6 +1168,9 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         int.parse(timeParts[1]),
       );
 
+      // Get court name properly
+      final courtName = _selectedCourt!['courtName'] ?? 'Court ${_selectedCourt!['courtNumber'] ?? 'N/A'}';
+
       final bookingData = {
         'userId': user.uid,
         'userName': _currentUserData?['name'] ?? user.displayName ?? user.email?.split('@')[0] ?? 'User',
@@ -1100,6 +1181,7 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         'venueLocation': widget.venue['location'] ?? '',
         'courtId': _selectedCourt!['id'],
         'courtNumber': _selectedCourt!['courtNumber'] ?? 'N/A',
+        'courtName': courtName,
         'courtType': _selectedCourt!['type'] ?? 'Standard Court',
         'date': dateStr,
         'timeSlot': _selectedTimeSlot,
@@ -1107,7 +1189,7 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         'duration': _selectedDuration,
         'pricePerHour': pricePerHour,
         'totalPrice': totalPrice,
-        'status': 'confirmed',
+        'status': 'pending_payment', // Changed from 'confirmed' to 'pending_payment'
         'paymentStatus': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -1121,43 +1203,24 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
       print('Creating booking with data: $bookingData');
 
       final docRef = await _firestore.collection('bookings').add(bookingData);
+      bookingData['id'] = docRef.id;
       print('Booking created with ID: ${docRef.id}');
-
-      // Create notification for successful booking
-      await NotificationService.createBookingNotification(
-        userId: user.uid,
-        bookingType: 'court',
-        title: 'Booking Confirmed!',
-        message: 'Your court booking at ${widget.venue['name']} for ${_formatDate(_selectedDate)} at $_selectedTimeSlot has been confirmed.',
-        bookingData: {
-          'bookingId': docRef.id,
-          'venueName': widget.venue['name'],
-          'courtNumber': _selectedCourt!['courtNumber'],
-          'date': dateStr,
-          'timeSlot': _selectedTimeSlot,
-        },
-      );
 
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        _showBookingSuccessDialog();
+
+        // Navigate to payment page instead of showing success
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VenuePaymentPage(booking: bookingData),
+          ),
+        );
       }
     } catch (e) {
       print('Booking error: $e');
-
-      // Create notification for failed booking
-      final user = _auth.currentUser;
-      if (user != null) {
-        await NotificationService.createNotification(
-          userId: user.uid,
-          type: 'booking',
-          title: 'Booking Failed',
-          message: 'There was an issue with your booking. Please try again or contact support.',
-          priority: 'high',
-        );
-      }
 
       if (mounted) {
         setState(() {

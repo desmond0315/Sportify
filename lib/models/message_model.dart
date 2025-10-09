@@ -1,19 +1,87 @@
-// Create this file as: lib/models/message_model.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// Chat Model - represents a conversation
+class ChatModel {
+  final String id;
+  final String coachId;
+  final String coachName;
+  final String studentId;
+  final String studentName;
+  final String? appointmentId;
+  final DateTime lastMessageTime;
+  final String lastMessage;
+  final String lastMessageSender;
+  final DateTime createdAt;
+  final bool isActive;
+  final int unreadCountForCoach;
+  final int unreadCountForStudent;
+
+  ChatModel({
+    required this.id,
+    required this.coachId,
+    required this.coachName,
+    required this.studentId,
+    required this.studentName,
+    this.appointmentId,
+    required this.lastMessageTime,
+    required this.lastMessage,
+    required this.lastMessageSender,
+    required this.createdAt,
+    this.isActive = true,
+    this.unreadCountForCoach = 0,
+    this.unreadCountForStudent = 0,
+  });
+
+  factory ChatModel.fromMap(Map<String, dynamic> map, String id) {
+    return ChatModel(
+      id: id,
+      coachId: map['coachId'] ?? '',
+      coachName: map['coachName'] ?? '',
+      studentId: map['studentId'] ?? '',
+      studentName: map['studentName'] ?? '',
+      appointmentId: map['appointmentId'],
+      lastMessageTime: (map['lastMessageTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      lastMessage: map['lastMessage'] ?? '',
+      lastMessageSender: map['lastMessageSender'] ?? '',
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isActive: map['isActive'] ?? true,
+      unreadCountForCoach: map['unreadCountForCoach'] ?? 0,
+      unreadCountForStudent: map['unreadCountForStudent'] ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'coachId': coachId,
+      'coachName': coachName,
+      'studentId': studentId,
+      'studentName': studentName,
+      'appointmentId': appointmentId,
+      'lastMessageTime': Timestamp.fromDate(lastMessageTime),
+      'lastMessage': lastMessage,
+      'lastMessageSender': lastMessageSender,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'isActive': isActive,
+      'unreadCountForCoach': unreadCountForCoach,
+      'unreadCountForStudent': unreadCountForStudent,
+    };
+  }
+}
+
+// Message Model - represents individual messages
 class MessageModel {
   final String id;
   final String chatId;
   final String senderId;
   final String senderName;
-  final String senderRole; // 'coach' or 'student'
+  final String senderRole;
   final String receiverId;
-  final String message;
+  final String message; // This will be encrypted
+  final String iv; // Initialization Vector for decryption
   final DateTime timestamp;
   final bool isRead;
-  final String? messageType; // 'text', 'image', 'system'
-  final Map<String, dynamic>? metadata; // For additional data
+  final String messageType;
+  final Map<String, dynamic>? metadata;
 
   MessageModel({
     required this.id,
@@ -23,6 +91,7 @@ class MessageModel {
     required this.senderRole,
     required this.receiverId,
     required this.message,
+    this.iv = '',
     required this.timestamp,
     this.isRead = false,
     this.messageType = 'text',
@@ -38,10 +107,11 @@ class MessageModel {
       senderRole: map['senderRole'] ?? '',
       receiverId: map['receiverId'] ?? '',
       message: map['message'] ?? '',
+      iv: map['iv'] ?? '',
       timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isRead: map['isRead'] ?? false,
       messageType: map['messageType'] ?? 'text',
-      metadata: map['metadata'],
+      metadata: map['metadata'] as Map<String, dynamic>?,
     );
   }
 
@@ -53,77 +123,11 @@ class MessageModel {
       'senderRole': senderRole,
       'receiverId': receiverId,
       'message': message,
+      'iv': iv,
       'timestamp': Timestamp.fromDate(timestamp),
       'isRead': isRead,
       'messageType': messageType,
       'metadata': metadata,
-    };
-  }
-}
-
-class ChatModel {
-  final String id;
-  final String coachId;
-  final String coachName;
-  final String studentId;
-  final String studentName;
-  final String? appointmentId; // Optional link to appointment
-  final DateTime lastMessageTime;
-  final String lastMessage;
-  final String lastMessageSender;
-  final int unreadCountForCoach;
-  final int unreadCountForStudent;
-  final bool isActive;
-  final DateTime createdAt;
-
-  ChatModel({
-    required this.id,
-    required this.coachId,
-    required this.coachName,
-    required this.studentId,
-    required this.studentName,
-    this.appointmentId,
-    required this.lastMessageTime,
-    required this.lastMessage,
-    required this.lastMessageSender,
-    this.unreadCountForCoach = 0,
-    this.unreadCountForStudent = 0,
-    this.isActive = true,
-    required this.createdAt,
-  });
-
-  factory ChatModel.fromMap(Map<String, dynamic> map, String id) {
-    return ChatModel(
-      id: id,
-      coachId: map['coachId'] ?? '',
-      coachName: map['coachName'] ?? '',
-      studentId: map['studentId'] ?? '',
-      studentName: map['studentName'] ?? '',
-      appointmentId: map['appointmentId'],
-      lastMessageTime: (map['lastMessageTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      lastMessage: map['lastMessage'] ?? '',
-      lastMessageSender: map['lastMessageSender'] ?? '',
-      unreadCountForCoach: map['unreadCountForCoach'] ?? 0,
-      unreadCountForStudent: map['unreadCountForStudent'] ?? 0,
-      isActive: map['isActive'] ?? true,
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'coachId': coachId,
-      'coachName': coachName,
-      'studentId': studentId,
-      'studentName': studentName,
-      'appointmentId': appointmentId,
-      'lastMessageTime': Timestamp.fromDate(lastMessageTime),
-      'lastMessage': lastMessage,
-      'lastMessageSender': lastMessageSender,
-      'unreadCountForCoach': unreadCountForCoach,
-      'unreadCountForStudent': unreadCountForStudent,
-      'isActive': isActive,
-      'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 }

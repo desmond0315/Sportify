@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/messaging_service.dart';
+import '../services/review_service.dart';
 import 'chat_page.dart';
 import 'services/notification_service.dart';
+import 'write_review_page.dart';
+import 'write_venue_review_page.dart';
+import 'payment_page.dart';
+import 'payment_page.dart';
+import 'reschedule_request_page.dart';
 
 class MyBookingsPage extends StatefulWidget {
   const MyBookingsPage({Key? key}) : super(key: key);
@@ -142,6 +148,18 @@ class _MyBookingsPageState extends State<MyBookingsPage>
         );
       }
     }
+  }
+  // Add this method to _MyBookingsPageState
+  Future<bool> _canReviewVenue(String bookingId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    return await ReviewService.canReviewVenueBooking(bookingId, user.uid);
+  }
+
+  Future<bool> _canReview(String appointmentId) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    return await ReviewService.canReviewAppointment(appointmentId, user.uid);
   }
 
   String _getBookingPrice(Map<String, dynamic> booking) {
@@ -316,7 +334,9 @@ class _MyBookingsPageState extends State<MyBookingsPage>
     final bookingType = booking['bookingType'] ?? 'court';
     final isCoachBooking = bookingType == 'coach';
     final isUpcoming = type == 'upcoming';
+    final isPast = type == 'past';
     final isCancelled = type == 'cancelled';
+    final isCompleted = booking['status'] == 'completed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -402,7 +422,8 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                   _buildDetailRow(Icons.access_time, 'Time', '${booking['timeSlot'] ?? 'N/A'} - ${booking['endTime'] ?? 'N/A'}'),
                   if (!isCoachBooking)
                     _buildDetailRow(Icons.location_on, 'Venue', booking['venueLocation'] ?? 'Location not specified'),
-                  _buildDetailRow(Icons.attach_money, 'Total', 'RM ${_getBookingPrice(booking)}'),                  if (booking['paymentStatus'] != null)
+                  _buildDetailRow(Icons.attach_money, 'Total', 'RM ${_getBookingPrice(booking)}'),
+                  if (booking['paymentStatus'] != null)
                     _buildDetailRow(Icons.payment, 'Payment', _capitalizeFirst(booking['paymentStatus'])),
                 ],
               ),
@@ -413,7 +434,64 @@ class _MyBookingsPageState extends State<MyBookingsPage>
             // Action buttons
             Row(
               children: [
-                if (isUpcoming && !isCancelled)
+                // Show "Pay Now" button if payment is pending
+                if (isUpcoming &&
+                    !isCancelled &&
+                    bookingType == 'coach' &&
+                    booking['status'] == 'accepted' &&
+                    booking['paymentStatus'] == 'pending')
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => PaymentPage(appointment: booking),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.payment, size: 18),
+                      label: const Text('Pay Now'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4CAF50),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                //  Show "Request Reschedule" button for confirmed bookings
+                if (isUpcoming &&
+                    !isCancelled &&
+                    bookingType == 'coach' &&
+                    booking['status'] == 'confirmed' &&
+                    (booking['canReschedule'] ?? true))
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => RescheduleRequestPage(appointment: booking),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.schedule, size: 18),
+                      label: const Text('Reschedule'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Existing cancel button (keep as is)
+                if (isUpcoming && !isCancelled && !(booking['paymentStatus'] == 'pending'))
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => _showCancelDialog(booking),
@@ -429,6 +507,8 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                   ),
                 if (isUpcoming && !isCancelled)
                   const SizedBox(width: 12),
+
+                // Existing view details button (keep as is)
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => _showBookingDetails(booking),
@@ -446,6 +526,202 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                 ),
               ],
             ),
+
+            // In _buildBookingCard method, after the "View Details" button
+            // Write Venue Review Button - UPDATED VERSION
+            if (type == 'past' && !isCancelled && bookingType == 'court')
+              FutureBuilder<bool>(
+                future: _canReviewVenue(booking['id']),
+                builder: (context, snapshot) {
+                  // Show loading while checking
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        height: 44,
+                        alignment: Alignment.center,
+                        child: const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Show write review button if eligible
+                  if (snapshot.data == true) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => WriteVenueReviewPage(
+                                  bookingId: booking['id'],
+                                  venueId: booking['venueId'],
+                                  venueName: booking['venueName'] ?? 'Venue',
+                                ),
+                              ),
+                            );
+
+                            if (result == true && mounted) {
+                              setState(() {}); // Refresh to hide button
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Thank you for your review!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.star_outline, size: 18),
+                          label: const Text('Write Venue Review'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF8A50),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Show "Already Reviewed" badge if not eligible (already reviewed)
+                  if (snapshot.data == false) {
+                    // Double check if it's because they already reviewed
+                    return FutureBuilder<bool>(
+                      future: ReviewService.hasReviewedVenueBooking(booking['id'], _auth.currentUser!.uid),
+                      builder: (context, hasReviewedSnapshot) {
+                        if (hasReviewedSnapshot.data == true) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.check_circle, size: 18, color: Colors.green[700]),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Review Submitted',
+                                    style: TextStyle(
+                                      color: Colors.green[700],
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
+              ),
+
+            // Write Review Button (only for completed coach appointments)
+            if (isCoachBooking && isCompleted && isPast)
+              FutureBuilder<bool>(
+                future: _canReview(booking['id']),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox.shrink();
+                  }
+
+                  if (snapshot.data == true) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => WriteReviewPage(
+                                  appointmentId: booking['id'],
+                                  coachId: booking['coachId'],
+                                  coachName: booking['coachName'] ?? 'Coach',
+                                ),
+                              ),
+                            );
+
+                            if (result == true && mounted) {
+                              setState(() {}); // Refresh to hide button
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Thank you for your review!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.star_outline, size: 18),
+                          label: const Text('Write Review'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber[600],
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Show "Review Submitted" if already reviewed
+                  if (snapshot.data == false && isCompleted) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle, size: 18, color: Colors.green[700]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Review Submitted',
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
+              ),
           ],
         ),
       ),
@@ -644,7 +920,7 @@ class _MyBookingsPageState extends State<MyBookingsPage>
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // NEW: Send notification to coach if it's a coach appointment
+      // Send notification to coach if it's a coach appointment
       if (booking['bookingType'] == 'coach' && booking['coachId'] != null) {
         try {
           await NotificationService.createNotification(

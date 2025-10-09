@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'court_booking_page.dart';
 
 class VenueDetailPage extends StatefulWidget {
@@ -23,6 +24,10 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
   late TabController _tabController;
 
+  // For photo carousel
+  final PageController _pageController = PageController();
+  int _currentPhotoIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +39,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -111,6 +117,91 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     }
   }
 
+  // Get list of photos from venue
+  List<String> _getVenuePhotos() {
+    List<String> photos = [];
+
+    // Check if venue has photos array
+    if (widget.venue['photos'] != null && widget.venue['photos'] is List) {
+      List photosList = widget.venue['photos'] as List;
+      for (var photo in photosList) {
+        if (photo is Map && photo['data'] != null) {
+          photos.add(photo['data']);
+        }
+      }
+    }
+
+    // If no photos array, fall back to imageUrl
+    if (photos.isEmpty && widget.venue['imageUrl'] != null) {
+      photos.add(widget.venue['imageUrl']);
+    }
+
+    return photos;
+  }
+
+  Widget _buildPhotoFromData(String imageData) {
+    if (imageData.isEmpty) {
+      return Container(
+        color: Colors.grey[200],
+        child: Icon(
+          Icons.location_on,
+          size: 100,
+          color: Colors.grey[500],
+        ),
+      );
+    }
+
+    // Check if it's a base64 data URL
+    if (imageData.startsWith('data:image')) {
+      try {
+        // Extract base64 string
+        final base64String = imageData.split(',')[1];
+        final bytes = base64Decode(base64String);
+
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[200],
+              child: Icon(
+                Icons.location_on,
+                size: 100,
+                color: Colors.grey[500],
+              ),
+            );
+          },
+        );
+      } catch (e) {
+        print('Error decoding base64 image: $e');
+        return Container(
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.error,
+            size: 100,
+            color: Colors.grey[500],
+          ),
+        );
+      }
+    }
+
+    // Regular network URL
+    return Image.network(
+      imageData,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          color: Colors.grey[200],
+          child: Icon(
+            Icons.location_on,
+            size: 100,
+            color: Colors.grey[500],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,8 +214,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               children: [
                 _buildVenueInfo(),
                 _buildTabSection(),
-                // Add bottom padding to prevent content overlap with FAB
-                const SizedBox(height: 100), // Space for floating button
+                const SizedBox(height: 100),
               ],
             ),
           ),
@@ -136,6 +226,8 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   }
 
   Widget _buildSliverAppBar() {
+    final photos = _getVenuePhotos();
+
     return SliverAppBar(
       expandedHeight: 300,
       pinned: true,
@@ -152,82 +244,163 @@ class _VenueDetailPageState extends State<VenueDetailPage>
         ),
         onPressed: () => Navigator.pop(context),
       ),
-      actions: [
-        IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.favorite_border, color: Colors.white, size: 20),
-          ),
-          onPressed: () {},
-        ),
-        IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.share, color: Colors.white, size: 20),
-          ),
-          onPressed: () {},
-        ),
-      ],
+      // actions property removed - no more favorite and share icons
       flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.grey[300]!,
-                Colors.grey[200]!,
-              ],
-            ),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              widget.venue['imageUrl'] != null
-                  ? Image.network(
-                widget.venue['imageUrl'],
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: Colors.grey[200],
-                    child: Icon(
-                      Icons.location_on,
-                      size: 100,
-                      color: Colors.grey[500],
-                    ),
-                  );
-                },
-              )
-                  : Container(
-                color: Colors.grey[200],
-                child: Icon(
-                  Icons.location_on,
-                  size: 100,
-                  color: Colors.grey[500],
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Photo PageView for swiping
+            photos.isEmpty
+                ? Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.grey[300]!,
+                    Colors.grey[200]!,
+                  ],
                 ),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.3),
-                    ],
+              child: Icon(
+                Icons.location_on,
+                size: 100,
+                color: Colors.grey[500],
+              ),
+            )
+                : PageView.builder(
+              controller: _pageController,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentPhotoIndex = index;
+                });
+              },
+              itemCount: photos.length,
+              itemBuilder: (context, index) {
+                return _buildPhotoFromData(photos[index]);
+              },
+            ),
+
+            // Gradient overlay
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.3),
+                  ],
+                ),
+              ),
+            ),
+
+            // Left Arrow Button (only show if multiple photos and not on first photo)
+            if (photos.length > 1 && _currentPhotoIndex > 0)
+              Positioned(
+                left: 16,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      _pageController.previousPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_left,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+
+            // Right Arrow Button (only show if multiple photos and not on last photo)
+            if (photos.length > 1 && _currentPhotoIndex < photos.length - 1)
+              Positioned(
+                right: 16,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      _pageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_right,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Photo indicator dots (only show if multiple photos)
+            if (photos.length > 1)
+              Positioned(
+                bottom: 16,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(photos.length, (index) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: _currentPhotoIndex == index ? 24 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _currentPhotoIndex == index
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+
+            // Photo counter (top right)
+            if (photos.length > 1)
+              Positioned(
+                top: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${_currentPhotoIndex + 1}/${photos.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -244,7 +417,6 @@ class _VenueDetailPageState extends State<VenueDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Venue name and rating
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -289,7 +461,6 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
           const SizedBox(height: 12),
 
-          // Location
           Row(
             children: [
               Icon(
@@ -313,7 +484,6 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
           const SizedBox(height: 16),
 
-          // Sports and facilities
           if (sports.isNotEmpty) ...[
             const Text(
               'Available Sports',
@@ -351,7 +521,6 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             const SizedBox(height: 20),
           ],
 
-          // Venue stats
           Row(
             children: [
               _buildStatCard(
@@ -363,7 +532,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               _buildStatCard(
                 icon: Icons.access_time,
                 label: 'Open Hours',
-                value: _getOpenHours(),
+                value: _getTodayOpeningHours(),
               ),
               const SizedBox(width: 12),
               _buildStatCard(
@@ -392,6 +561,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
           border: Border.all(color: Colors.grey[200]!),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
@@ -402,10 +572,13 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             Text(
               value,
               style: const TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF2D3748),
               ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
             Text(
@@ -414,6 +587,9 @@ class _VenueDetailPageState extends State<VenueDetailPage>
                 fontSize: 12,
                 color: Colors.grey[600],
               ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -421,11 +597,29 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     );
   }
 
-  String _getOpenHours() {
-    if (widget.venue['openingHours'] != null) {
-      return widget.venue['openingHours'];
+  String _getTodayOpeningHours() {
+    if (widget.venue['operatingHours'] == null) return 'Not set';
+
+    final now = DateTime.now();
+    final days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    final today = days[now.weekday - 1];
+
+    final todayHours = widget.venue['operatingHours'][today];
+
+    if (todayHours == null) return 'Closed';
+
+    if (todayHours['closed'] == true) {
+      return 'Closed';
     }
-    return '6AM-11PM';
+
+    final open = todayHours['open'] ?? '';
+    final close = todayHours['close'] ?? '';
+
+    if (open.isEmpty || close.isEmpty) {
+      return 'Closed';
+    }
+
+    return '$open-$close';
   }
 
   Widget _buildTabSection() {
@@ -462,6 +656,17 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   }
 
   Widget _buildOverviewTab() {
+    // Get facilities and rules from venue data
+    List<String> facilities = [];
+    if (widget.venue['facilities'] is List) {
+      facilities = List<String>.from(widget.venue['facilities']);
+    }
+
+    List<String> rules = [];
+    if (widget.venue['rules'] is List) {
+      rules = List<String>.from(widget.venue['rules']);
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -484,50 +689,42 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Facilities',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2D3748),
+
+          // Only show Facilities section if there are facilities
+          if (facilities.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            const Text(
+              'Facilities',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2D3748),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _buildFacilitiesList(),
-          const SizedBox(height: 24),
-          const Text(
-            'Rules & Policies',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2D3748),
+            const SizedBox(height: 12),
+            _buildFacilitiesList(facilities),
+          ],
+
+          // Only show Rules section if there are rules
+          if (rules.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            const Text(
+              'Rules & Policies',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2D3748),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _buildRulesList(),
+            const SizedBox(height: 12),
+            _buildRulesList(rules),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildFacilitiesList() {
-    List<String> defaultFacilities = [
-      'Free WiFi',
-      'Parking Available',
-      'Changing Rooms',
-      'Shower Facilities',
-      'Equipment Rental',
-      'Cafeteria',
-    ];
-
-    List<String> facilities = [];
-    if (widget.venue['facilities'] is List) {
-      facilities = List<String>.from(widget.venue['facilities']);
-    } else {
-      facilities = defaultFacilities;
-    }
-
+  Widget _buildFacilitiesList(List<String> facilities) {
     return Column(
       children: facilities.map((facility) {
         return Padding(
@@ -540,11 +737,13 @@ class _VenueDetailPageState extends State<VenueDetailPage>
                 size: 20,
               ),
               const SizedBox(width: 12),
-              Text(
-                facility,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[700],
+              Expanded(
+                child: Text(
+                  facility,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
                 ),
               ),
             ],
@@ -554,22 +753,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     );
   }
 
-  Widget _buildRulesList() {
-    List<String> defaultRules = [
-      'Advance booking required',
-      'No outside food or drinks',
-      'Proper sports attire mandatory',
-      'Clean shoes required',
-      '15-minute grace period for late arrivals',
-    ];
-
-    List<String> rules = [];
-    if (widget.venue['rules'] is List) {
-      rules = List<String>.from(widget.venue['rules']);
-    } else {
-      rules = defaultRules;
-    }
-
+  Widget _buildRulesList(List<String> rules) {
     return Column(
       children: rules.map((rule) {
         return Padding(
@@ -681,12 +865,12 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             width: 60,
             height: 60,
             decoration: BoxDecoration(
-              color: const Color(0xFFFF8A50).withOpacity(0.1),
+              color: _getCourtTypeColor(court['type']).withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
-              Icons.sports_tennis,
-              color: Color(0xFFFF8A50),
+            child: Icon(
+              _getCourtTypeIcon(court['type']),
+              color: _getCourtTypeColor(court['type']),
               size: 28,
             ),
           ),
@@ -696,7 +880,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Court ${court['courtNumber'] ?? 'N/A'}',
+                  court['courtName'] ?? 'Court ${court['courtNumber'] ?? 'N/A'}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -704,16 +888,24 @@ class _VenueDetailPageState extends State<VenueDetailPage>
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  court['type'] ?? 'Standard Court',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 8),
                 Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _getCourtTypeColor(court['type']).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        court['type'] ?? 'Standard Court',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _getCourtTypeColor(court['type']),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Container(
                       width: 8,
                       height: 8,
@@ -751,6 +943,36 @@ class _VenueDetailPageState extends State<VenueDetailPage>
         ],
       ),
     );
+  }
+
+  Color _getCourtTypeColor(String? type) {
+    switch (type?.toLowerCase()) {
+      case 'indoor':
+        return const Color(0xFF3B82F6);
+      case 'outdoor':
+        return const Color(0xFFF59E0B);
+      case 'covered':
+        return const Color(0xFF10B981);
+      case 'semi-indoor':
+        return const Color(0xFF8B5CF6);
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  IconData _getCourtTypeIcon(String? type) {
+    switch (type?.toLowerCase()) {
+      case 'indoor':
+        return Icons.home;
+      case 'outdoor':
+        return Icons.wb_sunny;
+      case 'covered':
+        return Icons.roofing;
+      case 'semi-indoor':
+        return Icons.deck;
+      default:
+        return Icons.sports_tennis;
+    }
   }
 
   Widget _buildReviewsTab() {
@@ -942,7 +1164,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     return Container(
       width: MediaQuery.of(context).size.width - 40,
       height: 56,
-      margin: const EdgeInsets.only(bottom: 10), // Add margin from bottom
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(

@@ -12,14 +12,18 @@ import 'services/notification_service.dart';
 import 'services/messaging_service.dart';
 import 'chats_list_page.dart';
 import 'search_results_page.dart';
+import 'dart:convert';
+import 'venue_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   final String userName;
+
 
   const HomePage({Key? key, required this.userName}) : super(key: key);
 
   @override
   State<HomePage> createState() => _HomePageState();
+
 }
 
 class _HomePageState extends State<HomePage> {
@@ -36,6 +40,9 @@ class _HomePageState extends State<HomePage> {
   int _unreadNotificationCount = 0;
   int _unreadMessageCount = 0;
 
+  List<Map<String, dynamic>> _topVenues = [];
+  bool _isLoadingVenues = true;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +50,7 @@ class _HomePageState extends State<HomePage> {
     _listenToUserChanges();
     _listenToNotificationCount();
     _listenToMessageCount();
+    _fetchTopVenues();
   }
 
   @override
@@ -107,6 +115,113 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _fetchTopVenues() async {
+    try {
+      setState(() {
+        _isLoadingVenues = true; // Show loading when refreshing
+      });
+
+      final venuesSnapshot = await FirebaseFirestore.instance
+          .collection('venues')
+          .where('isActive', isEqualTo: true)
+          .orderBy('rating', descending: true)
+          .limit(4)
+          .get();
+
+      List<Map<String, dynamic>> venues = [];
+      for (var doc in venuesSnapshot.docs) {
+        Map<String, dynamic> venueData = doc.data();
+        venueData['id'] = doc.id;
+
+        // DEBUG: Print venue ratings
+        print('DEBUG: Venue ${venueData['name']} - Rating: ${venueData['rating']}, Total Reviews: ${venueData['totalReviews']}');
+
+        venues.add(venueData);
+      }
+
+      if (mounted) {
+        setState(() {
+          _topVenues = venues;
+          _isLoadingVenues = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching top venues: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingVenues = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh venues when returning to this page
+    _fetchTopVenues();
+  }
+
+  Widget _buildVenueImage(String? imageUrl, {double? height, double? width}) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Container(
+        height: height,
+        width: width,
+        color: Colors.grey[200],
+        child: Icon(
+          Icons.location_on,
+          size: 40,
+          color: Colors.grey[500],
+        ),
+      );
+    }
+
+    // Check if it's a base64 data URL
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        final base64String = imageUrl.split(',')[1];
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
+          height: height,
+          width: width,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              height: height,
+              width: width,
+              color: Colors.grey[200],
+              child: Icon(Icons.location_on, size: 40, color: Colors.grey[500]),
+            );
+          },
+        );
+      } catch (e) {
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(Icons.error, size: 40, color: Colors.grey[500]),
+        );
+      }
+    }
+
+    // Regular network URL
+    return Image.network(
+      imageUrl,
+      height: height,
+      width: width,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Icon(Icons.location_on, size: 40, color: Colors.grey[500]),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -116,34 +231,40 @@ class _HomePageState extends State<HomePage> {
           children: [
             // Main content
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header with profile and notification
-                    _buildHeader(),
+              child: RefreshIndicator(
+                color: const Color(0xFFFF8A50),
+                onRefresh: () async {
+                  await _fetchTopVenues();
+                },
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header with profile and notification
+                      _buildHeader(),
 
-                    const SizedBox(height: 30),
+                      const SizedBox(height: 30),
 
-                    // Search bar
-                    _buildSearchBar(),
+                      // Search bar
+                      _buildSearchBar(),
 
-                    const SizedBox(height: 35),
+                      const SizedBox(height: 35),
 
-                    // Sports categories
-                    _buildSportsCategories(),
+                      // Sports categories
+                      _buildSportsCategories(),
 
-                    const SizedBox(height: 40),
+                      const SizedBox(height: 40),
 
-                    // Main action buttons (Coaching, Booking, Tournament)
-                    _buildMainActionButtons(),
+                      // Main action buttons (Coaching, Booking, Tournament)
+                      _buildMainActionButtons(),
 
-                    const SizedBox(height: 40),
+                      const SizedBox(height: 40),
 
-                    // Venues near you section
-                    _buildVenuesSection(),
-                  ],
+                      // Venues near you section
+                      _buildVenuesSection(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -551,8 +672,22 @@ class _HomePageState extends State<HomePage> {
 
         const SizedBox(height: 20),
 
-        // Show sample venues message
-        Container(
+        // Venues carousel
+        _isLoadingVenues
+            ? Container(
+          height: 260,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF8A50)),
+            ),
+          ),
+        )
+            : _topVenues.isEmpty
+            ? Container(
           height: 260,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -570,14 +705,10 @@ class _HomePageState extends State<HomePage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.location_on,
-                  size: 60,
-                  color: Colors.grey[400],
-                ),
+                Icon(Icons.location_on, size: 60, color: Colors.grey[400]),
                 const SizedBox(height: 16),
                 Text(
-                  'Popular Venues Coming Soon',
+                  'No Venues Available Yet',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -586,32 +717,187 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Tap "Book Venue" above to explore all available venues',
+                  'Check back soon for popular venues',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => _handleActionTap('Book Venue'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF8A50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Browse Venues',
-                    style: TextStyle(color: Colors.white),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                 ),
               ],
             ),
           ),
+        )
+            : SizedBox(
+          height: 300,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _topVenues.length,
+            itemBuilder: (context, index) {
+              final venue = _topVenues[index];
+              final isLast = index == _topVenues.length - 1;
+
+              return Container(
+                width: 300,
+                margin: EdgeInsets.only(right: isLast ? 0 : 16),
+                child: _buildVenueCard(venue),
+              );
+            },
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildVenueCard(Map<String, dynamic> venue) {
+    List<String> sports = [];
+    if (venue['sports'] is List) {
+      sports = List<String>.from(venue['sports']);
+    }
+
+    return GestureDetector(
+      onTap: () => _handleVenueTap(venue),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Venue image
+            Container(
+              height: 140,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                color: Colors.grey[200],
+              ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                child: _buildVenueImage(venue['imageUrl'], height: 140, width: double.infinity),
+              ),
+            ),
+
+            // Venue details
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Rating and price
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star, color: Colors.amber[700], size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              _formatRating(venue['rating']), // Format rating properly
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.amber[800],
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '(${venue['totalReviews'] ?? 0})', // Show review count
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'RM ${venue['pricePerHour'] ?? 0}/hr',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFFF8A50),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Venue name
+                  Text(
+                    venue['name'] ?? 'Unknown Venue',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF2D3748),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  // Location
+                  Row(
+                    children: [
+                      Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[500]),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          venue['location'] ?? 'Location not specified',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Sports tags
+                  if (sports.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: sports.take(2).map((sport) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8A50).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            sport,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFFFF8A50),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -783,14 +1069,25 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _handleVenueTap(String venueName) {
-    print('Tapped on venue: $venueName');
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const VenuesPage(),
-      ),
-    );
+  void _handleVenueTap(dynamic venue) {
+    // venue can be either String (old behavior) or Map<String, dynamic> (new behavior)
+    if (venue is Map<String, dynamic>) {
+      // Navigate directly to venue detail with the venue data
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VenueDetailPage(venue: venue),
+        ),
+      );
+    } else {
+      // Fallback: navigate to venues list
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const VenuesPage(),
+        ),
+      );
+    }
   }
 
   void _onBottomNavTap(int index) {
@@ -853,7 +1150,7 @@ class _HomePageState extends State<HomePage> {
       ),
       builder: (BuildContext context) {
         return Container(
-          height: MediaQuery.of(context).size.height * 0.5, // Fixed height instead of DraggableScrollableSheet
+          height: MediaQuery.of(context).size.height * 0.53, // Fixed height instead of DraggableScrollableSheet
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
@@ -943,95 +1240,96 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 30),
 
-              // Menu options - using Column instead of ListView for better control
+              // Menu options - scrollable to prevent overflow
               Expanded(
-                child: Column(
-                  children: [
-                    _buildMenuOption(
-                      icon: Icons.calendar_today,
-                      title: 'My Bookings',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const MyBookingsPage(),
-                          ),
-                        );
-                      },
-                    ),
-
-                    _buildMenuOption(
-                      icon: Icons.notifications,
-                      title: 'Notifications',
-                      subtitle: _unreadNotificationCount > 0 ? '$_unreadNotificationCount unread' : null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const NotificationsPage(),
-                          ),
-                        );
-                      },
-                      isHighlighted: _unreadNotificationCount > 0,
-                    ),
-
-                    _buildMenuOption(
-                      icon: Icons.chat_bubble_outline,
-                      title: 'Messages',
-                      subtitle: _unreadMessageCount > 0 ? '$_unreadMessageCount unread' : null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ChatsListPage(),
-                          ),
-                        );
-                      },
-                      isHighlighted: _unreadMessageCount > 0,
-                    ),
-
-                    _buildMenuOption(
-                      icon: Icons.person_outline,
-                      title: 'Edit Profile',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ProfilePage(),
-                          ),
-                        );
-                      },
-                    ),
-
-                    // Show coach-specific options for coaches only
-                    if (_currentUserRole == 'coach')
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
                       _buildMenuOption(
-                        icon: Icons.dashboard_outlined,
-                        title: 'Coach Dashboard',
-                        subtitle: 'Manage your coaching',
+                        icon: Icons.calendar_today,
+                        title: 'My Bookings',
                         onTap: () {
                           Navigator.pop(context);
-                          print('Coach Dashboard');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const MyBookingsPage(),
+                            ),
+                          );
                         },
-                        isHighlighted: true,
                       ),
 
+                      _buildMenuOption(
+                        icon: Icons.notifications,
+                        title: 'Notifications',
+                        subtitle: _unreadNotificationCount > 0 ? '$_unreadNotificationCount unread' : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const NotificationsPage(),
+                            ),
+                          );
+                        },
+                        isHighlighted: _unreadNotificationCount > 0,
+                      ),
 
-                    // Logout button - same styling as other menu items
-                    _buildMenuOption(
-                      icon: Icons.logout,
-                      title: 'Logout',
-                      onTap: () {
-                        Navigator.pop(context);
-                        _handleLogout();
-                      },
-                      isDestructive: true,
-                    ),
-                  ],
+                      _buildMenuOption(
+                        icon: Icons.chat_bubble_outline,
+                        title: 'Messages',
+                        subtitle: _unreadMessageCount > 0 ? '$_unreadMessageCount unread' : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ChatsListPage(),
+                            ),
+                          );
+                        },
+                        isHighlighted: _unreadMessageCount > 0,
+                      ),
+
+                      _buildMenuOption(
+                        icon: Icons.person_outline,
+                        title: 'Edit Profile',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ProfilePage(),
+                            ),
+                          );
+                        },
+                      ),
+
+                      // Show coach-specific options for coaches only
+                      if (_currentUserRole == 'coach')
+                        _buildMenuOption(
+                          icon: Icons.dashboard_outlined,
+                          title: 'Coach Dashboard',
+                          subtitle: 'Manage your coaching',
+                          onTap: () {
+                            Navigator.pop(context);
+                            print('Coach Dashboard');
+                          },
+                          isHighlighted: true,
+                        ),
+
+                      // Logout button - same styling as other menu items
+                      _buildMenuOption(
+                        icon: Icons.logout,
+                        title: 'Logout',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _handleLogout();
+                        },
+                        isDestructive: true,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1145,5 +1443,23 @@ class _HomePageState extends State<HomePage> {
         }
       }
     }
+  }
+  // Helper method to format rating
+  String _formatRating(dynamic rating) {
+    if (rating == null) return '0.0';
+
+    if (rating is int) {
+      return rating.toStringAsFixed(1);
+    } else if (rating is double) {
+      return rating.toStringAsFixed(1);
+    } else if (rating is String) {
+      try {
+        return double.parse(rating).toStringAsFixed(1);
+      } catch (e) {
+        return '0.0';
+      }
+    }
+
+    return '0.0';
   }
 }

@@ -285,7 +285,7 @@ class _ChatsListPageState extends State<ChatsListPage> {
             ],
             Expanded(
               child: Text(
-                chat.lastMessage,
+                chat.lastMessage,  // This now shows actual message preview
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

@@ -17,6 +17,12 @@ dependencies:
   firebase_storage: ^11.6.0
   file_picker: ^8.0.0+1
   timezone: ^0.9.2
+  encrypt: ^5.0.3
+  crypto: ^3.0.3
+  http: ^1.1.0
+  url_launcher: ^6.2.1
+
+  connectivity_plus: ^5.0.2  # Check internet connection before payment
 
 
 dev_dependencies:

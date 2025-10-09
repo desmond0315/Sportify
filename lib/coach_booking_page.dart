@@ -1148,7 +1148,9 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
 
       final malaysiaTime = TimezoneHelper.getMalaysiaTime();
 
+      // ==================== SIMPLIFIED DATA STRUCTURE ====================
       Map<String, dynamic> appointmentData = {
+        // EXISTING BASIC FIELDS
         'userId': user.uid,
         'studentName': _currentUserData?['name'] ?? user.displayName ?? user.email?.split('@')[0] ?? 'User',
         'userEmail': user.email ?? '',
@@ -1163,7 +1165,6 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         'requestedAt': FieldValue.serverTimestamp(),
         'respondedAt': null,
         'responseMessage': null,
-        'paymentStatus': 'pending',
         'notes': _notesController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -1175,8 +1176,43 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         'duration': duration,
         'bookedInTimezone': 'Asia/Kuala_Lumpur',
         'bookedAtMalaysiaTime': TimezoneHelper.formatMalaysiaTime(malaysiaTime, format: 'dd/MM/yyyy HH:mm'),
+
+        // PAYMENT FIELDS (SIMPLIFIED)
+        'paymentStatus': 'not_required_yet',
+        'paymentAmount': totalPrice.toDouble(),
+        'paymentMethod': '',
+        'paymentId': '',
+        'paidAt': null,
+
+        // PROOF FIELDS
+        'proofPhotoUrl': '',
+        'proofUploadedAt': null,
+
+        // VERIFICATION FIELDS
+        'verificationStatus': 'pending',
+        'verifiedBy': '',
+        'verifiedAt': null,
+        'verificationNotes': '',
+
+        // RESCHEDULING FIELDS (NEW!)
+        'rescheduleCount': 0,
+        'maxReschedules': 2,
+        'canReschedule': true,
+        'rescheduleHistory': [],
+
+        // CANCELLATION FIELDS (SIMPLIFIED - admin only)
+        'cancelledBy': '',
+        'cancelledAt': null,
+        'cancellationReason': '',
+        'isCancelled': false,
+
+        // PAYMENT RELEASE FIELDS
+        'paymentReleasedToCoach': false,
+        'paymentReleasedAt': null,
+        'coachEarnings': 0.0,
       };
 
+      // Add package-specific fields
       if (_bookingType == 'hourly') {
         appointmentData['pricePerHour'] = widget.coach['pricePerHour'] ?? 0;
       } else {
@@ -1187,13 +1223,13 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         });
       }
 
-      print('Creating coach appointment with data: $appointmentData');
+      print('Creating coach appointment with SIMPLIFIED STRUCTURE: $appointmentData');
 
       final docRef = await _firestore.collection('coach_appointments').add(appointmentData);
       appointmentData['id'] = docRef.id;
       print('Coach appointment created with ID: ${docRef.id}');
 
-      // Create chat between student and coach
+      // Create chat (existing code - keep as is)
       try {
         final chatId = await MessagingService.createOrGetChat(
           coachId: widget.coach['id'],
@@ -1203,7 +1239,6 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
           appointmentId: docRef.id,
         );
 
-        // Send initial system message about the booking
         await MessagingService.sendMessage(
           chatId: chatId,
           senderId: 'system',
@@ -1221,10 +1256,9 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         print('Chat created successfully with ID: $chatId');
       } catch (chatError) {
         print('Error creating chat: $chatError');
-        // Don't fail the booking if chat creation fails
       }
 
-      // Send notification to coach about new request
+      // Send notification to coach (existing code)
       try {
         await NotificationService.notifyCoachNewRequest(
           coachId: widget.coach['id'],
@@ -1233,7 +1267,6 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         );
       } catch (notificationError) {
         print('Error sending notification: $notificationError');
-        // Don't fail the booking if notification fails
       }
 
       if (mounted) {

@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.sportify"
-        minSdkVersion(23)
+        minSdkVersion(24)
         targetSdkVersion(34)
         versionCode = 1
         versionName = "1.0"

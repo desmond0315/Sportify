@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/message_model.dart';
+import '../services/encryption_service.dart';
+
 
 class MessagingService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -74,6 +76,29 @@ class MessagingService {
     Map<String, dynamic>? metadata,
   }) async {
     try {
+      String messageToStore;
+      String iv;
+      String lastMessagePreview;
+
+      // DON'T encrypt system messages
+      if (messageType == 'system' || senderRole == 'system' || senderId == 'system') {
+        messageToStore = message;  // Store as plain text
+        iv = '';  // No IV for system messages
+        lastMessagePreview = message.length > 100
+            ? '${message.substring(0, 100)}...'
+            : message;
+      } else {
+        // ONLY encrypt regular user messages
+        final encryptionResult = EncryptionService.encryptMessage(message, chatId);
+        messageToStore = encryptionResult['encrypted']!;
+        iv = encryptionResult['iv']!;
+
+        // Show actual message preview in chat list (truncated)
+        lastMessagePreview = message.length > 100
+            ? '${message.substring(0, 100)}...'
+            : message;
+      }
+
       final messageData = MessageModel(
         id: '',
         chatId: chatId,
@@ -81,7 +106,8 @@ class MessagingService {
         senderName: senderName,
         senderRole: senderRole,
         receiverId: receiverId,
-        message: message,
+        message: messageToStore,  // Encrypted for user messages, plain for system
+        iv: iv,  // Empty for system messages
         timestamp: DateTime.now(),
         messageType: messageType,
         metadata: metadata,
@@ -90,10 +116,10 @@ class MessagingService {
       // Add message to messages collection
       await _firestore.collection('messages').add(messageData.toMap());
 
-      // Update chat with last message info
+      // Update chat with preview
       await _updateChatLastMessage(
         chatId: chatId,
-        lastMessage: message,
+        lastMessage: lastMessagePreview,
         lastMessageSender: senderId,
         senderRole: senderRole,
       );

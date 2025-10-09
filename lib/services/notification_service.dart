@@ -270,6 +270,31 @@ class NotificationService {
     }
   }
 
+  // Add to NotificationService class
+  static Future<void> notifyUserToReviewVenue({
+    required String userId,
+    required String userName,
+    required String venueName,
+    required String bookingId,
+  }) async {
+    try {
+      await createNotification(
+        userId: userId,
+        type: 'booking',
+        title: 'Rate Your Experience',
+        message: 'How was your visit to $venueName? Leave a review to help others!',
+        priority: 'normal',
+        data: {
+          'action': 'write_venue_review',
+          'bookingId': bookingId,
+          'venueName': venueName,
+        },
+      );
+    } catch (e) {
+      print('Error sending venue review reminder: $e');
+    }
+  }
+
   // Notify coach about new session request
   static Future<void> notifyCoachNewRequest({
     required String coachId,
@@ -288,6 +313,55 @@ class NotificationService {
       },
       priority: 'high',
     );
+  }
+
+  // Add this method to NotificationService class
+  static Future<void> notifyCoachNewReview({
+    required String coachId,
+    required String studentName,
+    required int rating,
+  }) async {
+    try {
+      await createNotification(
+        userId: coachId,
+        type: 'coach',
+        title: 'New Review Received!',
+        message: '$studentName gave you a $rating-star review. Check it out!',
+        priority: 'normal',
+        data: {
+          'action': 'view_profile',
+          'studentName': studentName,
+          'rating': rating,
+        },
+      );
+    } catch (e) {
+      print('Error sending review notification: $e');
+    }
+  }
+
+// Add this method to notify students to leave reviews
+  static Future<void> notifyStudentToReview({
+    required String studentId,
+    required String studentName,
+    required String coachName,
+    required String appointmentId,
+  }) async {
+    try {
+      await createNotification(
+        userId: studentId,
+        type: 'booking',
+        title: 'Rate Your Session',
+        message: 'How was your session with $coachName? Leave a review to help other students!',
+        priority: 'normal',
+        data: {
+          'action': 'write_review',
+          'appointmentId': appointmentId,
+          'coachName': coachName,
+        },
+      );
+    } catch (e) {
+      print('Error sending review reminder: $e');
+    }
   }
 
   // Notify student about request acceptance

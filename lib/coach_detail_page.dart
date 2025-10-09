@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import 'coach_booking_page.dart';
+import 'all_reviews_page.dart';
+
 
 class CoachDetailPage extends StatefulWidget {
   final Map<String, dynamic> coach;
@@ -189,44 +191,7 @@ class _CoachDetailPageState extends State<CoachDetailPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      actions: [
-        Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.favorite_border, color: Color(0xFF2D3748)),
-            onPressed: () {},
-          ),
-        ),
-        Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.share, color: Color(0xFF2D3748)),
-            onPressed: () {},
-          ),
-        ),
-      ],
+      // actions property removed entirely
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
@@ -845,7 +810,17 @@ class _CoachDetailPageState extends State<CoachDetailPage> {
               ),
               if (_reviews.isNotEmpty)
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AllReviewsPage(
+                          coachId: widget.coach['id'],
+                          coachName: widget.coach['name'] ?? 'Coach',
+                        ),
+                      ),
+                    );
+                  },
                   child: const Text(
                     'View all',
                     style: TextStyle(

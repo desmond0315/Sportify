@@ -6,6 +6,9 @@ import '../services/notification_service.dart';
 import '../models/notification_model.dart';
 import 'my_bookings_page.dart';
 import 'coaching_page.dart';
+import 'write_review_page.dart';
+import 'write_venue_review_page.dart';
+import 'payment_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({Key? key}) : super(key: key);
@@ -478,6 +481,87 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final action = data['action'] as String?;
 
       switch (action) {
+        case 'write_venue_review':
+        // Navigate to write venue review page
+          final bookingId = data['bookingId'] as String?;
+          final venueName = data['venueName'] as String?;
+
+          if (bookingId != null && venueName != null) {
+            // Get venue ID from booking
+            FirebaseFirestore.instance
+                .collection('bookings')
+                .doc(bookingId)
+                .get()
+                .then((doc) {
+              if (doc.exists) {
+                final bookingData = doc.data() as Map<String, dynamic>;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WriteVenueReviewPage(
+                      bookingId: bookingId,
+                      venueId: bookingData['venueId'],
+                      venueName: venueName,
+                    ),
+                  ),
+                );
+              }
+            });
+          }
+          break;
+
+        case 'write_review':
+        // Navigate to write coach review page
+          final appointmentId = data['appointmentId'] as String?;
+          final coachName = data['coachName'] as String?;
+
+          if (appointmentId != null && coachName != null) {
+            // Get coach ID from appointment
+            FirebaseFirestore.instance
+                .collection('coach_appointments')
+                .doc(appointmentId)
+                .get()
+                .then((doc) {
+              if (doc.exists) {
+                final appointmentData = doc.data() as Map<String, dynamic>;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WriteReviewPage(
+                      appointmentId: appointmentId,
+                      coachId: appointmentData['coachId'],
+                      coachName: coachName,
+                    ),
+                  ),
+                );
+              }
+            });
+          }
+          break;
+
+        case 'proceed_to_payment':
+        // Navigate to payment page
+          final appointmentId = data['appointmentId'] as String?;
+          if (appointmentId != null) {
+            FirebaseFirestore.instance
+                .collection('coach_appointments')
+                .doc(appointmentId)
+                .get()
+                .then((doc) {
+              if (doc.exists) {
+                final appointmentData = doc.data() as Map<String, dynamic>;
+                appointmentData['id'] = doc.id;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PaymentPage(appointment: appointmentData),
+                  ),
+                );
+              }
+            });
+          }
+          break;
+
         case 'view_booking':
         // Navigate to bookings page
           Navigator.push(
@@ -487,6 +571,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
           );
           break;
+
         case 'view_coaches':
         // Navigate to coaches page
           Navigator.push(
@@ -496,10 +581,47 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
           );
           break;
+
         case 'explore_app':
         // Go back to home
           Navigator.pop(context);
           break;
+
+        case 'upload_proof':
+        // Navigate to upload proof page for rejected proofs
+          final appointmentId = data['appointmentId'] as String?;
+          if (appointmentId != null) {
+            FirebaseFirestore.instance
+                .collection('coach_appointments')
+                .doc(appointmentId)
+                .get()
+                .then((doc) {
+              if (doc.exists) {
+                final appointmentData = doc.data() as Map<String, dynamic>;
+                appointmentData['id'] = doc.id;
+
+                // Navigate to coach requests page or upload proof page
+                // For now, just show a message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Please re-upload proof for this session'),
+                    backgroundColor: Colors.orange,
+                    action: SnackBarAction(
+                      label: 'VIEW',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        // Navigate to coach requests page
+                        Navigator.pop(context); // Close notifications
+                      },
+                    ),
+                  ),
+                );
+              }
+            });
+          }
+          break;
+
+
         default:
         // Show detailed notification dialog
           _showNotificationDetails(notification);
