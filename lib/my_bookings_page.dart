@@ -149,6 +149,266 @@ class _MyBookingsPageState extends State<MyBookingsPage>
       }
     }
   }
+
+  // Add this method after _fetchBookings() method
+  bool _canRequestRefund(Map<String, dynamic> booking) {
+    if (booking['bookingType'] != 'court') return false;
+
+    try {
+      final dateParts = booking['date'].split('-');
+      final timeParts = booking['timeSlot'].split(':');
+
+      final bookingDateTime = DateTime(
+        int.parse(dateParts[0]),
+        int.parse(dateParts[1]),
+        int.parse(dateParts[2]),
+        int.parse(timeParts[0]),
+        int.parse(timeParts[1]),
+      );
+
+      final now = DateTime.now();
+      final hoursUntilBooking = bookingDateTime.difference(now).inHours;
+
+      return hoursUntilBooking >= 24;
+    } catch (e) {
+      print('Error calculating refund eligibility: $e');
+      return false;
+    }
+  }
+
+// Add this method right after _canRequestRefund()
+  Future<void> _requestCancelAndRefund(Map<String, dynamic> booking) async {
+    // Check if eligible for refund
+    if (!_canRequestRefund(booking)) {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red, size: 28),
+                SizedBox(width: 12),
+                Text('Refund Not Available'),
+              ],
+            ),
+            content: Text(
+              'Sorry, refunds are only available for bookings that are at least 24 hours away. Your booking is within 24 hours.',
+              style: TextStyle(fontSize: 15, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('OK', style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Expanded(child: Text('Request Cancellation & Refund?')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to cancel this booking and request a refund?',
+                style: TextStyle(fontSize: 15, height: 1.4),
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                        SizedBox(width: 8),
+                        Text(
+                          'Refund Information',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      '• Amount: RM ${booking['totalPrice']}\n'
+                          '• Processing time: 5-7 working days\n'
+                          '• Refund will be sent to your PayPal account',
+                      style: TextStyle(fontSize: 13, color: Colors.blue.shade800, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Keep Booking', style: TextStyle(fontSize: 16)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text('Cancel & Refund', style: TextStyle(color: Colors.white, fontSize: 16)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    // Process the cancellation and refund request
+    try {
+      final collection = booking['bookingType'] == 'coach' ? 'coach_appointments' : 'bookings';
+
+      await _firestore.collection(collection).doc(booking['id']).update({
+        'status': 'refund_requested',
+        'refundRequestedAt': FieldValue.serverTimestamp(),
+        'refundRequestedBy': _auth.currentUser?.uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Create notification for admin
+      await _firestore.collection('notifications').add({
+        'userId': 'admin',
+        'type': 'payment',
+        'title': 'Refund Request',
+        'message': '${booking['userName']} has requested a refund for booking at ${booking['venueName']} on ${booking['date']}. Amount: RM ${booking['totalPrice']}',
+        'data': {
+          'bookingId': booking['id'],
+          'amount': booking['totalPrice'],
+          'action': 'process_refund',
+        },
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'priority': 'high',
+      });
+
+      if (mounted) {
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.check, color: Colors.white, size: 30),
+                    ),
+                    SizedBox(height: 20),
+                    Text(
+                      'Refund Request Submitted',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'Your refund request has been submitted successfully. The admin will review and process your refund.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[600],
+                        height: 1.5,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Refund of RM ${booking['totalPrice']} will be processed within 5-7 working days after approval.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blue.shade900,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _fetchBookings();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFFF8A50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(
+                          'OK',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error submitting refund request: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Add this method to _MyBookingsPageState
   Future<bool> _canReviewVenue(String bookingId) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -462,7 +722,7 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                     ),
                   ),
 
-                //  Show "Request Reschedule" button for confirmed bookings
+                // Show "Request Reschedule" button for confirmed bookings
                 if (isUpcoming &&
                     !isCancelled &&
                     bookingType == 'coach' &&
@@ -490,25 +750,32 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                     ),
                   ),
 
-                // Existing cancel button (keep as is)
-                if (isUpcoming && !isCancelled && !(booking['paymentStatus'] == 'pending'))
+                // Show "Cancel & Refund" button for court bookings with completed payment
+                if (isUpcoming && !isCancelled && bookingType == 'court' &&
+                    (booking['paymentStatus'] == 'completed' ||
+                        booking['paymentStatus'] == 'paid' ||
+                        booking['paymentStatus'] == 'held_by_admin'))
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => _showCancelDialog(booking),
+                    child: OutlinedButton.icon(
+                      onPressed: () => _requestCancelAndRefund(booking),
+                      icon: const Icon(Icons.cancel_outlined, size: 18),
+                      label: const Text('Cancel & Refund'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
+                        foregroundColor: _canRequestRefund(booking) ? Colors.red : Colors.grey,
+                        side: BorderSide(
+                          color: _canRequestRefund(booking) ? Colors.red : Colors.grey,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: const Text('Cancel Booking'),
                     ),
                   ),
+
                 if (isUpcoming && !isCancelled)
                   const SizedBox(width: 12),
 
-                // Existing view details button (keep as is)
+                // View Details button
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => _showBookingDetails(booking),
@@ -526,6 +793,72 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                 ),
               ],
             ),
+
+// Show 24-hour notice if refund is not available (OUTSIDE THE ROW)
+            if (isUpcoming && !isCancelled && bookingType == 'court' &&
+                !_canRequestRefund(booking) &&
+                (booking['paymentStatus'] == 'completed' ||
+                    booking['paymentStatus'] == 'paid' ||
+                    booking['paymentStatus'] == 'held_by_admin'))
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.red.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Refunds are only available 24+ hours before booking',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+// Show refund status badge if refund was requested (OUTSIDE THE ROW)
+            if (booking['status'] == 'refund_requested')
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.pending_actions, size: 18, color: Colors.orange.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Refund Request Pending Admin Review',
+                        style: TextStyle(
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 16),
 
             // In _buildBookingCard method, after the "View Details" button
             // Write Venue Review Button - UPDATED VERSION
@@ -1011,6 +1344,9 @@ class _MyBookingsPageState extends State<MyBookingsPage>
   }
 
   void _showBookingDetails(Map<String, dynamic> booking) {
+    final bookingType = booking['bookingType'] ?? 'court';
+    final isCoachBooking = bookingType == 'coach';
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1044,15 +1380,25 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                 ),
                 const SizedBox(height: 16),
                 _buildDetailItem('Booking ID', booking['id'] ?? 'N/A'),
-                _buildDetailItem('Venue', booking['venueName'] ?? 'N/A'),
-                _buildDetailItem('Location', booking['venueLocation'] ?? 'N/A'),
-                _buildDetailItem('Court', 'Court ${booking['courtNumber']} - ${booking['courtType']}'),
+
+                // Show venue/location/court ONLY for COURT bookings
+                if (!isCoachBooking) ...[
+                  _buildDetailItem('Venue', booking['venueName'] ?? 'N/A'),
+                  _buildDetailItem('Location', booking['venueLocation'] ?? 'N/A'),
+                  _buildDetailItem('Court', 'Court ${booking['courtNumber']} - ${booking['courtType']}'),
+                ],
+
                 _buildDetailItem('Date', _formatBookingDate(booking['date'])),
                 _buildDetailItem('Time', '${booking['timeSlot']} - ${booking['endTime']}'),
                 _buildDetailItem('Duration', '${booking['duration'] ?? 1} hour(s)'),
                 _buildDetailItem('Total Price', 'RM ${_getBookingPrice(booking)}'),
                 _buildDetailItem('Payment Status', _capitalizeFirst(booking['paymentStatus'] ?? 'pending')),
                 _buildDetailItem('Status', _capitalizeFirst(booking['status'] ?? 'confirmed')),
+
+                // Show coach name for coach bookings
+                if (isCoachBooking && booking['coachName'] != null)
+                  _buildDetailItem('Coach', booking['coachName']),
+
                 if (booking['notes'] != null && booking['notes'].isNotEmpty)
                   _buildDetailItem('Notes', booking['notes']),
                 const SizedBox(height: 20),
