@@ -465,14 +465,6 @@ class _VenuesPageState extends State<VenuesPage> {
                     Navigator.pop(context);
                   },
                 ),
-                ListTile(
-                  title: const Text('Distance'),
-                  leading: const Icon(Icons.location_on, color: Color(0xFFFF8A50)),
-                  onTap: () {
-                    _sortVenues('distance');
-                    Navigator.pop(context);
-                  },
-                ),
               ],
             ),
           ),
@@ -489,10 +481,6 @@ class _VenuesPageState extends State<VenuesPage> {
           break;
         case 'price':
           _filteredVenues.sort((a, b) => (a['pricePerHour'] ?? 0).compareTo(b['pricePerHour'] ?? 0));
-          break;
-        case 'distance':
-        // For now, just sort by name - you'd implement actual distance calculation
-          _filteredVenues.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
           break;
       }
     });

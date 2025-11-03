@@ -57,7 +57,7 @@ class _CoachRequestsPageState extends State<CoachRequestsPage>
         Map<String, dynamic> data = doc.data();
         data['id'] = doc.id;
 
-        // ✅ FIXED: Handle reschedule_requested status
+        // Handle reschedule_requested status
         if (data['status'] == 'pending_approval') {
           pending.add(data);
         } else if (data['status'] == 'reschedule_requested') {
@@ -309,7 +309,8 @@ class _CoachRequestsPageState extends State<CoachRequestsPage>
           userId: request['userId'],
           type: 'coach',
           title: 'Reschedule Approved!',
-          message: '${request['coachName']} has approved your reschedule request. Your session is now on ${latestReschedule['newDate']} at ${latestReschedule['newTimeSlot']}.',
+          message: '${request['coachName']} has approved your reschedule request. '
+              'Your session is now on ${latestReschedule['newDate']} at ${latestReschedule['newTimeSlot']}.',
           data: {
             'appointmentId': request['id'],
             'action': 'view_booking',
@@ -789,14 +790,14 @@ class _CoachRequestsPageState extends State<CoachRequestsPage>
     ],
     ),
     ] else if (isAccepted && !isRescheduleRequested) ...[
-    // ✅ FIXED: Show upload button for accepted/confirmed sessions that haven't been verified yet
+    // Show upload button for accepted/confirmed sessions that haven't been verified yet
     // OR if they were rejected and need to re-upload
     if (request['status'] == 'confirmed' ||
     request['status'] == 'accepted' ||
     request['verificationStatus'] == 'rejected') ...[
     Column(
     children: [
-    // ✅ Show rejection notice if proof was rejected
+    // Show rejection notice if proof was rejected
     if (request['verificationStatus'] == 'rejected') ...[
     Container(
     padding: const EdgeInsets.all(12),
@@ -1100,7 +1101,8 @@ class _CoachRequestsPageState extends State<CoachRequestsPage>
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Decline Reschedule'),
           content: Text(
-              'Decline the reschedule request from ${request['studentName']}? The session will remain at the original time: ${request['date']} at ${request['timeSlot']}.'
+              'Decline the reschedule request from ${request['studentName']}? '
+                  'The session will remain at the original time: ${request['date']} at ${request['timeSlot']}.'
           ),
           actions: [
             TextButton(

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -132,20 +133,33 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isSaving = true);
 
     try {
-      final updateData = {
+      final Map<String, dynamic> updateData = {
         'name': _nameController.text.trim(),
         'phoneNumber': _phoneController.text.trim(),
         'dateOfBirth': _dobController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Save to Firestore first
+      // FIXED: Add profile image if it exists
+      if (_profileImageBase64 != null && _profileImageBase64!.isNotEmpty) {
+        updateData['profileImageBase64'] = _profileImageBase64!;
+        print('Profile image will be saved (length: ${_profileImageBase64!.length})');
+      } else {
+        print('No profile image to save');
+      }
+
+      print('Saving to Firestore: ${updateData.keys}');
+
+      // Save to Firestore
       await _firestore.collection('users').doc(user.uid).update(updateData);
+
+      print('Successfully saved to Firestore!');
 
       // Try to update Firebase Auth display name, but don't fail if it doesn't work
       try {
         await user.updateDisplayName(_nameController.text.trim());
-        await user.reload(); // Reload user to get updated info
+        await user.reload();
+        print('Display name updated');
       } catch (authError) {
         print('Warning: Could not update display name: $authError');
         // Continue anyway since Firestore update was successful
@@ -198,6 +212,45 @@ class _ProfilePageState extends State<ProfilePage> {
         _dobController.text = "${picked.day}/${picked.month}/${picked.year}";
       });
     }
+  }
+
+  // Malaysian phone number validator
+  String? _validateMalaysianPhone(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your phone number';
+    }
+
+    // Remove any spaces, dashes, or special characters
+    final cleanNumber = value.replaceAll(RegExp(r'[^0-9]'), '');
+
+    // Check if it starts with 01
+    if (!cleanNumber.startsWith('01')) {
+      return 'Phone must start with 01';
+    }
+
+    // Check if length is valid (10-11 digits for Malaysian numbers)
+    if (cleanNumber.length < 10 || cleanNumber.length > 11) {
+      return 'Phone must be 10-11 digits';
+    }
+
+    return null;
+  }
+
+  // Name validator with length limit
+  String? _validateName(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your name';
+    }
+
+    if (value.trim().length < 2) {
+      return 'Name must be at least 2 characters';
+    }
+
+    if (value.trim().length > 50) {
+      return 'Name must not exceed 50 characters';
+    }
+
+    return null;
   }
 
   @override
@@ -380,12 +433,8 @@ class _ProfilePageState extends State<ProfilePage> {
             controller: _nameController,
             label: 'Full Name',
             icon: Icons.person_outline,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your name';
-              }
-              return null;
-            },
+            validator: _validateName,
+            maxLength: 50,
           ),
           const SizedBox(height: 20),
           _buildTextField(
@@ -393,6 +442,12 @@ class _ProfilePageState extends State<ProfilePage> {
             label: 'Phone Number',
             icon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
+            validator: _validateMalaysianPhone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(11),
+            ],
+            helperText: 'Format: 01XXXXXXXXX (10-11 digits)',
           ),
           const SizedBox(height: 20),
           _buildTextField(
@@ -457,6 +512,9 @@ class _ProfilePageState extends State<ProfilePage> {
     TextInputType? keyboardType,
     bool readOnly = false,
     VoidCallback? onTap,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    String? helperText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -476,6 +534,8 @@ class _ProfilePageState extends State<ProfilePage> {
           keyboardType: keyboardType,
           readOnly: readOnly,
           onTap: onTap,
+          maxLength: maxLength,
+          inputFormatters: inputFormatters,
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
@@ -494,6 +554,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 size: 20,
               ),
             ),
+            helperText: helperText,
+            helperStyle: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+            counterText: '',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: Colors.grey[300]!),
@@ -505,6 +571,14 @@ class _ProfilePageState extends State<ProfilePage> {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: Color(0xFFFF8A50)),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,

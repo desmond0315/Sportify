@@ -44,6 +44,7 @@ class AuthService {
         print('User document created successfully for ${userCredential.user!.uid}');
       }
 
+      // ✅ IMPORTANT: Return the userCredential here
       return userCredential;
 
     } on FirebaseAuthException catch (e) {
@@ -55,7 +56,8 @@ class AuthService {
 
       // Special handling for PigeonUserDetails/ListObject32 error
       if (e.toString().contains('PigeonUserDetails') ||
-          e.toString().contains('ListObject32')) {
+          e.toString().contains('ListObject32') ||
+          e.toString().contains('List<Object?>')) {
 
         // Check if user was actually created despite the error
         final currentUser = _auth.currentUser;
@@ -67,12 +69,11 @@ class AuthService {
             await _createUserDocumentWithRetry(currentUser, name, email);
             print('User document created after error recovery');
 
-            // Return the userCredential if we have it, or null if creation succeeded
-            return userCredential;
+            // we'll return null but the signup handler will check currentUser
+            return null;
 
           } catch (firestoreError) {
             print('Failed to create user document after recovery: $firestoreError');
-            // Clean up - delete the created auth user since we couldn't create the document
             try {
               await currentUser.delete();
             } catch (deleteError) {

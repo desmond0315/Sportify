@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class AllReviewsPage extends StatefulWidget {
-  final String coachId;
-  final String coachName;
+class AllVenueReviewsPage extends StatefulWidget {
+  final String venueId;
+  final String venueName;
 
-  const AllReviewsPage({
+  const AllVenueReviewsPage({
     Key? key,
-    required this.coachId,
-    required this.coachName,
+    required this.venueId,
+    required this.venueName,
   }) : super(key: key);
 
   @override
-  State<AllReviewsPage> createState() => _AllReviewsPageState();
+  State<AllVenueReviewsPage> createState() => _AllVenueReviewsPageState();
 }
 
-class _AllReviewsPageState extends State<AllReviewsPage> {
+class _AllVenueReviewsPageState extends State<AllVenueReviewsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<Map<String, dynamic>> _reviews = [];
@@ -36,10 +36,9 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
       });
 
       QuerySnapshot querySnapshot = await _firestore
-          .collection('coaches')
-          .doc(widget.coachId)
+          .collection('venues')
+          .doc(widget.venueId)
           .collection('reviews')
-          .where('isActive', isEqualTo: true)
           .orderBy('createdAt', descending: true)
           .get();
 
@@ -93,7 +92,7 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '${widget.coachName}\'s Reviews',
+          '${widget.venueName}\'s Reviews',
           style: const TextStyle(
             color: Color(0xFF2D3748),
             fontSize: 20,
@@ -174,15 +173,14 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // FIXED: Wrap the star row to handle overflow
                     Wrap(
                       alignment: WrapAlignment.center,
-                      spacing: 2, // Space between stars
+                      spacing: 2,
                       children: List.generate(5, (index) {
                         return Icon(
                           index < _averageRating.round() ? Icons.star : Icons.star_border,
                           color: Colors.amber[600],
-                          size: 20, // Reduced from 24 to 20
+                          size: 20,
                         );
                       }),
                     ),
@@ -245,7 +243,7 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
                           ),
                           const SizedBox(width: 8),
                           SizedBox(
-                            width: 30, // Reduced from 35 to give more space
+                            width: 30,
                             child: Text(
                               '$count',
                               style: TextStyle(
@@ -294,7 +292,7 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
                 radius: 24,
                 backgroundColor: const Color(0xFFFF8A50),
                 child: Text(
-                  (review['studentName'] ?? review['userName'] ?? 'U')[0].toUpperCase(),
+                  (review['userName'] ?? 'U')[0].toUpperCase(),
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -308,7 +306,7 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      review['studentName'] ?? review['userName'] ?? 'Anonymous',
+                      review['userName'] ?? 'Anonymous',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF2D3748),
@@ -411,7 +409,7 @@ class _AllReviewsPageState extends State<AllReviewsPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Be the first to leave a review for this coach!',
+            'Be the first to leave a review for this venue!',
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[500],

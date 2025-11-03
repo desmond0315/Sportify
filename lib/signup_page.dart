@@ -1,8 +1,74 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
 import 'coach_registration_page.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // ADD THIS LINE
+import 'package:firebase_auth/firebase_auth.dart';
 
+// Password Validator Helper Class
+class PasswordValidator {
+  static String? validate(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your password';
+    }
+
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+
+    // Check for at least one uppercase letter
+    if (!value.contains(RegExp(r'[A-Z]'))) {
+      return 'Password must contain at least one uppercase letter';
+    }
+
+    // Check for at least one lowercase letter
+    if (!value.contains(RegExp(r'[a-z]'))) {
+      return 'Password must contain at least one lowercase letter';
+    }
+
+    // Check for at least one number
+    if (!value.contains(RegExp(r'[0-9]'))) {
+      return 'Password must contain at least one number';
+    }
+
+    // Check for at least one special character
+    if (!value.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
+      return r'Password must contain at least one special character (!@#$%^&*...)';
+    }
+
+    return null;
+  }
+
+  static List<PasswordRequirement> getRequirements(String password) {
+    return [
+      PasswordRequirement(
+        text: 'At least 8 characters',
+        isMet: password.length >= 8,
+      ),
+      PasswordRequirement(
+        text: 'One uppercase letter (A-Z)',
+        isMet: password.contains(RegExp(r'[A-Z]')),
+      ),
+      PasswordRequirement(
+        text: 'One lowercase letter (a-z)',
+        isMet: password.contains(RegExp(r'[a-z]')),
+      ),
+      PasswordRequirement(
+        text: 'One number (0-9)',
+        isMet: password.contains(RegExp(r'[0-9]')),
+      ),
+      PasswordRequirement(
+        text: r'One special character (!@#$...)',
+        isMet: password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]')),
+      ),
+    ];
+  }
+}
+
+class PasswordRequirement {
+  final String text;
+  final bool isMet;
+
+  PasswordRequirement({required this.text, required this.isMet});
+}
 
 class SignupPage extends StatefulWidget {
   const SignupPage({Key? key}) : super(key: key);
@@ -19,6 +85,7 @@ class _SignupPageState extends State<SignupPage> {
   final AuthService _authService = AuthService();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _showPasswordRequirements = false;
 
   @override
   void dispose() {
@@ -139,7 +206,7 @@ class _SignupPageState extends State<SignupPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Join us and start your fitness transformation',
+                        'Join us and start your passion in motion',
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey[600],
@@ -250,7 +317,7 @@ class _SignupPageState extends State<SignupPage> {
 
                         const SizedBox(height: 24),
 
-                        // Email Field
+                        // Email Field - Enhanced Validation
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -331,10 +398,21 @@ class _SignupPageState extends State<SignupPage> {
                                   if (value == null || value.isEmpty) {
                                     return 'Please enter your email';
                                   }
-                                  if (!RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$')
+
+                                  // Trim whitespace
+                                  value = value.trim();
+
+                                  // Check for valid email format
+                                  if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
                                       .hasMatch(value)) {
-                                    return 'Please enter a valid email';
+                                    return 'Please enter a valid email address';
                                   }
+
+                                  // Check for common typos
+                                  if (value.contains('..') || value.startsWith('.') || value.endsWith('.')) {
+                                    return 'Invalid email format';
+                                  }
+
                                   return null;
                                 },
                               ),
@@ -344,7 +422,7 @@ class _SignupPageState extends State<SignupPage> {
 
                         const SizedBox(height: 24),
 
-                        // Password Field
+                        // Password Field with Requirements Checker
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -437,17 +515,76 @@ class _SignupPageState extends State<SignupPage> {
                                     vertical: 20,
                                   ),
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your password';
-                                  }
-                                  if (value.length < 6) {
-                                    return 'Password must be at least 6 characters';
-                                  }
-                                  return null;
+                                onChanged: (value) {
+                                  setState(() {
+                                    _showPasswordRequirements = value.isNotEmpty;
+                                  });
                                 },
+                                validator: PasswordValidator.validate,
                               ),
                             ),
+
+                            // Password Requirements Indicator
+                            if (_showPasswordRequirements && _passwordController.text.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(top: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey[200]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Password Requirements:',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ...PasswordValidator.getRequirements(_passwordController.text)
+                                        .map((requirement) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            requirement.isMet
+                                                ? Icons.check_circle
+                                                : Icons.radio_button_unchecked,
+                                            size: 16,
+                                            color: requirement.isMet
+                                                ? const Color(0xFF4CAF50)
+                                                : Colors.grey[400],
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              requirement.text,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: requirement.isMet
+                                                    ? const Color(0xFF4CAF50)
+                                                    : Colors.grey[600],
+                                                fontWeight: requirement.isMet
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w400,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ))
+                                        .toList(),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
 
@@ -555,19 +692,6 @@ class _SignupPageState extends State<SignupPage> {
                         ),
 
                         const SizedBox(height: 8),
-
-                        // Coach registration info text
-                        Center(
-                          child: Text(
-                            'Skip registration for now and join as a coach later',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -649,62 +773,216 @@ class _SignupPageState extends State<SignupPage> {
         name: _nameController.text.trim(),
       );
 
-      print('User created successfully: ${userCredential?.user?.uid}');
+      print('Signup completed. UserCredential: ${userCredential != null ? "exists" : "null"}');
+
+      //Get user from userCredential OR currentUser (handles the PigeonUserDetails error case)
+      User? user = userCredential?.user;
+
+      if (user == null) {
+        print('UserCredential was null, checking currentUser...');
+        // Wait a moment for Firebase to sync
+        await Future.delayed(const Duration(milliseconds: 500));
+        user = FirebaseAuth.instance.currentUser;
+      }
+
+      if (user == null) {
+        print('No user found after signup');
+        throw Exception('User creation failed - no user found');
+      }
+
+      print('User found: ${user.uid}');
+      print('User email: ${user.email}');
+      print('Email verified status: ${user.emailVerified}');
+
+      // Send verification email
+      if (!user.emailVerified) {
+        try {
+          print('Attempting to send verification email...');
+          print('User state before sending: uid=${user.uid}, email=${user.email}');
+
+          await user.sendEmailVerification();
+
+          print('Verification email sent successfully to: ${user.email}');
+          print('CHECK YOUR EMAIL INBOX AND SPAM FOLDER NOW!');
+        } catch (emailError) {
+          print('Error sending verification email: $emailError');
+          print('Email error type: ${emailError.runtimeType}');
+
+          if (emailError is FirebaseAuthException) {
+            print('Firebase error code: ${emailError.code}');
+            print('Firebase error message: ${emailError.message}');
+          }
+          // Continue even if email fails - user can request resend later
+        }
+      } else {
+        print('Email already verified');
+      }
+
+      // Sign out the user after creating the account
+      await FirebaseAuth.instance.signOut();
+      print('User signed out after signup');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Account created successfully!'),
-            backgroundColor: Colors.green[400],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.mark_email_read_outlined,
+                      color: Color(0xFF4CAF50),
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Verify Your Email',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Account created successfully!',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'We\'ve sent a verification email to:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF8A50).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFFFF8A50).withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.email,
+                          color: Color(0xFFFF8A50),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _emailController.text.trim(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFFF8A50),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue[700],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Please check your inbox and click the verification link before logging in.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue[900],
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tip: Check your spam folder if you don\'t see the email.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(); // Go back to login page
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    backgroundColor: const Color(0xFFFF8A50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Got it!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         );
-        Navigator.pop(context);
       }
     } catch (e) {
       print('Error during signup: $e');
+      print('Error type: ${e.runtimeType}');
 
-      // Handle the PigeonUserDetails/ListObject32 error specifically
-      if (e.toString().contains('PigeonUserDetails') ||
-          e.toString().contains('ListObject32')) {
-
-        // Wait a moment and check if user was actually created
-        await Future.delayed(Duration(seconds: 1));
-
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null) {
-          print('User was created despite error: ${currentUser.uid}');
-
-          // Try to ensure the Firestore document exists
-          try {
-            await _authService.ensureUserDocument(currentUser);
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Account created successfully!'),
-                  backgroundColor: Colors.green[400],
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
-              Navigator.pop(context);
-            }
-            return; // Exit successfully
-          } catch (firestoreError) {
-            print('Failed to create user document: $firestoreError');
-            // Clean up the auth user if we can't create the document
-            await currentUser.delete();
-          }
-        }
-      }
-
-      // Show the actual error for other cases
+      // Show error to user
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

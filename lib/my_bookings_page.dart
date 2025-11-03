@@ -8,8 +8,8 @@ import 'services/notification_service.dart';
 import 'write_review_page.dart';
 import 'write_venue_review_page.dart';
 import 'payment_page.dart';
-import 'payment_page.dart';
 import 'reschedule_request_page.dart';
+import 'venue_payment_page.dart';
 
 class MyBookingsPage extends StatefulWidget {
   const MyBookingsPage({Key? key}) : super(key: key);
@@ -47,9 +47,12 @@ class _MyBookingsPageState extends State<MyBookingsPage>
     final user = _auth.currentUser;
     if (user == null) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    // Only set loading state if still mounted
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
       // Fetch court bookings from 'bookings' collection
@@ -99,32 +102,62 @@ class _MyBookingsPageState extends State<MyBookingsPage>
       List<Map<String, dynamic>> cancelled = [];
 
       final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
 
       for (var booking in allBookings) {
-        DateTime? bookingDate;
-        if (booking['date'] != null) {
-          try {
-            final dateParts = booking['date'].split('-');
-            bookingDate = DateTime(
-              int.parse(dateParts[0]),
-              int.parse(dateParts[1]),
-              int.parse(dateParts[2]),
-            );
-          } catch (e) {
-            print('Error parsing date: ${booking['date']}');
-            continue;
-          }
+        // First check if cancelled or refund requested
+        final status = booking['status'] as String?;
+        if (status == 'cancelled' || status == 'refund_requested') {
+          cancelled.add(booking);
+          continue;
         }
 
-        if (booking['status'] == 'cancelled') {
-          cancelled.add(booking);
-        } else if (bookingDate != null) {
-          if (bookingDate.isAfter(today) || bookingDate.isAtSameMomentAs(today)) {
-            upcoming.add(booking);
+        // Parse booking date and end time to determine if past or upcoming
+        final dateString = booking['date'] as String?;
+        final endTimeString = booking['endTime'] as String?;
+
+        if (dateString == null) {
+          print('Warning: Booking ${booking['id']} has no date');
+          continue;
+        }
+
+        try {
+          // Parse date (YYYY-MM-DD)
+          final dateParts = dateString.split('-');
+          final year = int.parse(dateParts[0]);
+          final month = int.parse(dateParts[1]);
+          final day = int.parse(dateParts[2]);
+
+          DateTime bookingEndDateTime;
+
+          if (endTimeString != null && endTimeString.isNotEmpty) {
+            // Parse end time (HH:MM)
+            final timeParts = endTimeString.split(':');
+            final hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+
+            // Create complete end datetime
+            bookingEndDateTime = DateTime(year, month, day, hour, minute);
           } else {
-            past.add(booking);
+            // Fallback: if no endTime, assume end of day
+            bookingEndDateTime = DateTime(year, month, day, 23, 59, 59);
           }
+
+          // Compare with current time
+          if (now.isAfter(bookingEndDateTime)) {
+            // Booking time has ended - it's past
+            past.add(booking);
+            print('DEBUG: Booking ${booking['id']} added to PAST (ended at $bookingEndDateTime)');
+          } else {
+            // Booking hasn't ended yet - it's upcoming
+            upcoming.add(booking);
+            print('DEBUG: Booking ${booking['id']} added to UPCOMING (ends at $bookingEndDateTime)');
+          }
+
+        } catch (e) {
+          print('Error parsing date/time for booking ${booking['id']}: $e');
+          print('  Date: $dateString, EndTime: $endTimeString');
+          // If parsing fails, add to upcoming as fallback
+          upcoming.add(booking);
         }
       }
 
@@ -135,11 +168,12 @@ class _MyBookingsPageState extends State<MyBookingsPage>
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-
+      // Only update state if still mounted
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error fetching bookings: $e'),
@@ -302,7 +336,8 @@ class _MyBookingsPageState extends State<MyBookingsPage>
         'userId': 'admin',
         'type': 'payment',
         'title': 'Refund Request',
-        'message': '${booking['userName']} has requested a refund for booking at ${booking['venueName']} on ${booking['date']}. Amount: RM ${booking['totalPrice']}',
+        'message': '${booking['userName']} has requested a refund for booking at ${booking['venueName']}'
+            ' on ${booking['date']}. Amount: RM ${booking['totalPrice']}',
         'data': {
           'bookingId': booking['id'],
           'amount': booking['totalPrice'],
@@ -692,14 +727,16 @@ class _MyBookingsPageState extends State<MyBookingsPage>
             const SizedBox(height: 16),
 
             // Action buttons
+            // Action buttons
+            // Action buttons
             Row(
               children: [
-                // Show "Pay Now" button if payment is pending
+                // Show "Pay Now" for COACH bookings with pending/processing payment
                 if (isUpcoming &&
                     !isCancelled &&
                     bookingType == 'coach' &&
                     booking['status'] == 'accepted' &&
-                    booking['paymentStatus'] == 'pending')
+                    (booking['paymentStatus'] == 'pending' || booking['paymentStatus'] == 'processing'))
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {
@@ -722,6 +759,61 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                     ),
                   ),
 
+                // Show "Pay Now" for COURT bookings
+                if (isUpcoming &&
+                    !isCancelled &&
+                    bookingType == 'court' &&
+                    (booking['paymentStatus']?.toLowerCase() == 'pending' ||
+                        booking['paymentStatus'] == 'pending_payment' ||
+                        booking['paymentStatus']?.toLowerCase() == 'processing'))
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        // Refresh booking data before navigating
+                        final freshBooking = await _firestore.collection('bookings').doc(booking['id']).get();
+                        final bookingData = freshBooking.data() as Map<String, dynamic>;
+                        bookingData['id'] = freshBooking.id;
+
+                        if (mounted) {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VenuePaymentPage(booking: bookingData),
+                            ),
+                          );
+
+                          // Only refresh if still mounted after returning
+                          if (mounted) {
+                            _fetchBookings();
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.payment, size: 18),
+                      label: const Text('Pay Now'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF8A50),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Add spacing ONLY if Pay Now button is shown
+                if ((isUpcoming &&
+                    !isCancelled &&
+                    bookingType == 'coach' &&
+                    booking['status'] == 'accepted' &&
+                    (booking['paymentStatus'] == 'pending' || booking['paymentStatus'] == 'processing')) ||
+                    (isUpcoming &&
+                        !isCancelled &&
+                        bookingType == 'court' &&
+                        (booking['paymentStatus']?.toLowerCase() == 'pending' ||
+                            booking['paymentStatus'] == 'pending_payment' ||
+                            booking['paymentStatus']?.toLowerCase() == 'processing')))
+                  const SizedBox(width: 12),
+
                 // Show "Request Reschedule" button for confirmed bookings
                 if (isUpcoming &&
                     !isCancelled &&
@@ -738,7 +830,7 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                           ),
                         );
                       },
-                      icon: const Icon(Icons.schedule, size: 18),
+                      icon: const Icon(Icons.schedule, size: 13),
                       label: const Text('Reschedule'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
@@ -749,6 +841,14 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                       ),
                     ),
                   ),
+
+                // Add spacing if Reschedule button is shown
+                if (isUpcoming &&
+                    !isCancelled &&
+                    bookingType == 'coach' &&
+                    booking['status'] == 'confirmed' &&
+                    (booking['canReschedule'] ?? true))
+                  const SizedBox(width: 12),
 
                 // Show "Cancel & Refund" button for court bookings with completed payment
                 if (isUpcoming && !isCancelled && bookingType == 'court' &&
@@ -772,10 +872,14 @@ class _MyBookingsPageState extends State<MyBookingsPage>
                     ),
                   ),
 
-                if (isUpcoming && !isCancelled)
+                // Add spacing if Cancel & Refund button is shown
+                if (isUpcoming && !isCancelled && bookingType == 'court' &&
+                    (booking['paymentStatus'] == 'completed' ||
+                        booking['paymentStatus'] == 'paid' ||
+                        booking['paymentStatus'] == 'held_by_admin'))
                   const SizedBox(width: 12),
 
-                // View Details button
+                // View Details button - ALWAYS SHOW
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => _showBookingDetails(booking),

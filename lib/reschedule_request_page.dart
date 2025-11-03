@@ -284,27 +284,27 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '• You have $remaining reschedule${remaining != 1 ? 's' : ''} remaining',
+            'You have $remaining reschedule${remaining != 1 ? 's' : ''} remaining',
             style: TextStyle(fontSize: 14, color: Colors.blue[800]),
           ),
           const SizedBox(height: 4),
           Text(
-            '• ⏰ Can only reschedule to LATER dates/times',
+            'Can only reschedule to LATER dates/times',
             style: TextStyle(fontSize: 14, color: Colors.blue[800], fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(
-            '• 🔒 Duration must stay ${widget.appointment['duration']} hour(s)',
+            'Duration must stay ${widget.appointment['duration']} hour(s)',
             style: TextStyle(fontSize: 14, color: Colors.blue[800], fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(
-            '• Coach must approve the new time',
+            'Coach must approve the new time',
             style: TextStyle(fontSize: 14, color: Colors.blue[800]),
           ),
           const SizedBox(height: 4),
           Text(
-            '• New time must be 24+ hours from now',
+            'New time must be 24+ hours from now',
             style: TextStyle(fontSize: 14, color: Colors.blue[800]),
           ),
         ],
@@ -334,10 +334,10 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
               final availableDates = TimezoneHelper.getAvailableBookingDates();
               final date = availableDates[index];
 
-              // ✅ NEW: Get original booking date
+              //  NEW: Get original booking date
               final originalDate = _getOriginalBookingDate();
 
-              // ✅ NEW: Disable dates that are earlier than original booking
+              // NEW: Disable dates that are earlier than original booking
               final isBeforeOriginal = originalDate != null && date.isBefore(originalDate);
 
               final isSelected = _selectedDate != null &&
@@ -429,7 +429,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
     );
   }
 
-// ✅ NEW: Add this helper method to get original booking date
+//  Add this helper method to get original booking date
   DateTime? _getOriginalBookingDate() {
     try {
       final dateStr = widget.appointment['date'];
@@ -447,7 +447,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
     }
   }
 
-// ✅ UPDATED: Replace the entire _buildTimeSelection method with this:
+//  Replace the entire _buildTimeSelection method with this:
   Widget _buildTimeSelection() {
     if (_isCheckingAvailability) {
       return const Center(
@@ -457,7 +457,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
       );
     }
 
-    // ✅ NEW: Get original booking date and time for comparison
+    //  Get original booking date and time for comparison
     final originalDate = _getOriginalBookingDate();
     final originalStartTime = widget.appointment['timeSlot'] as String?;
     final isSameDay = originalDate != null &&
@@ -525,7 +525,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
               final isAvailable = _timeSlotAvailability[timeSlot] ?? true;
               final isSelected = _selectedStartTime == timeSlot;
 
-              // ✅ NEW: Check if time slot is before original booking time
+              // Check if time slot is before original booking time
               final isBeforeOriginal = isSameDay &&
                   originalStartTime != null &&
                   _isTimeSlotBeforeOriginal(timeSlot, originalStartTime);
@@ -535,7 +535,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
                     ? () {
                   setState(() {
                     _selectedStartTime = timeSlot;
-                    // ✅ AUTO-CALCULATE end time based on original duration
+                    //AUTO-CALCULATE end time based on original duration
                     _selectedEndTime = _calculateEndTimeFromDuration(timeSlot);
                   });
                 }
@@ -601,7 +601,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
 
         const SizedBox(height: 16),
 
-        // ✅ NEW: Show auto-calculated end time (read-only)
+        // Show auto-calculated end time (read-only)
         if (_selectedStartTime != null) ...[
           const Text(
             'End Time (Auto-calculated)',
@@ -654,14 +654,14 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
     );
   }
 
-  // ✅ NEW: Helper method to check if time slot is before original
+  // Helper method to check if time slot is before original
   bool _isTimeSlotBeforeOriginal(String newTime, String originalTime) {
     final newHour = int.parse(newTime.split(':')[0]);
     final originalHour = int.parse(originalTime.split(':')[0]);
     return newHour < originalHour;
   }
 
-// ✅ NEW: Helper method to auto-calculate end time based on duration
+// Helper method to auto-calculate end time based on duration
   String? _calculateEndTimeFromDuration(String startTime) {
     final startHour = int.parse(startTime.split(':')[0]);
     final duration = widget.appointment['duration'] ?? 1;
@@ -792,7 +792,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
         0,
       );
 
-      // ✅ FIXED: Create reschedule history entry with Timestamp.now()
+      // Create reschedule history entry with Timestamp.now()
       Map<String, dynamic> rescheduleEntry = {
         'oldDate': widget.appointment['date'],
         'oldTimeSlot': widget.appointment['timeSlot'],
@@ -801,7 +801,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
         'newTimeSlot': _selectedStartTime,
         'newEndTime': _selectedEndTime,
         'requestedBy': 'student',
-        'requestedAt': Timestamp.now(),  // ✅ FIXED
+        'requestedAt': Timestamp.now(),
         'reason': _reasonController.text.trim(),
         'status': 'pending',
         'approvedBy': '',
@@ -819,7 +819,7 @@ class _RescheduleRequestPageState extends State<RescheduleRequestPage> {
           .update({
         'rescheduleHistory': rescheduleHistory,
         'status': 'reschedule_requested',
-        'updatedAt': FieldValue.serverTimestamp(),  // ✅ This is OK at top level
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       // Send notification to coach

@@ -26,25 +26,23 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
 
   DateTime _selectedDate = DateTime.now();
   String? _selectedTimeSlot;
-  int _selectedDuration = 1; // Default 1 hour
+  int _selectedDuration = 1;
   Map<String, dynamic>? _selectedCourt;
   bool _isLoading = false;
 
   Map<String, bool> _timeSlotAvailability = {};
-  Map<String, int> _maxDurationPerSlot = {}; // Max consecutive hours available from each slot
+  Map<String, int> _maxDurationPerSlot = {};
   List<Map<String, dynamic>> _availableCourts = [];
   Map<String, dynamic>? _currentUserData;
 
-  List<String> _timeSlots = []; // Will be populated based on operating hours
+  List<String> _timeSlots = [];
 
   @override
   void initState() {
     super.initState();
-    // Initialize with Malaysia current date
     final malaysiaTime = TimezoneHelper.getMalaysiaTime();
     _selectedDate = DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
 
-    // Generate time slots based on operating hours
     _timeSlots = _generateTimeSlotsFromOperatingHours();
 
     _checkTimeSlotAvailability();
@@ -53,7 +51,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
 
   List<String> _generateTimeSlotsFromOperatingHours() {
     if (widget.venue['operatingHours'] == null) {
-      // Fallback to default hours if not set
       return [
         '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
         '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
@@ -61,14 +58,12 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
       ];
     }
 
-    final now = DateTime.now();
     final days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     final today = days[_selectedDate.weekday - 1];
-
     final todayHours = widget.venue['operatingHours'][today];
 
     if (todayHours == null || todayHours['closed'] == true) {
-      return []; // Return empty if venue is closed
+      return [];
     }
 
     final openTime = todayHours['open'] ?? '';
@@ -78,11 +73,9 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
       return [];
     }
 
-    // Parse opening and closing times
     final openHour = int.parse(openTime.split(':')[0]);
     final closeHour = int.parse(closeTime.split(':')[0]);
 
-    // Generate time slots from open to close
     List<String> slots = [];
     for (int hour = openHour; hour < closeHour; hour++) {
       slots.add('${hour.toString().padLeft(2, '0')}:00');
@@ -101,7 +94,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
             _currentUserData = userDoc.data();
           });
         } else {
-          // Create user document if it doesn't exist
           final userData = {
             'uid': user.uid,
             'name': user.displayName ?? user.email?.split('@')[0] ?? 'User',
@@ -115,11 +107,9 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
           setState(() {
             _currentUserData = userData;
           });
-          print('Created user document for booking: ${user.uid}');
         }
       } catch (e) {
         print('Error loading user data: $e');
-        // Fallback user data
         setState(() {
           _currentUserData = {
             'uid': user.uid,
@@ -136,23 +126,61 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
     try {
       final dateStr = "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}";
 
-      // Get all bookings for this venue and date
       QuerySnapshot bookingsSnapshot = await _firestore
           .collection('bookings')
           .where('venueId', isEqualTo: widget.venue['id'])
           .where('date', isEqualTo: dateStr)
           .where('status', whereIn: ['confirmed', 'pending']).get();
 
+      print('Found ${bookingsSnapshot.docs.length} bookings');
+
+      // Get blocked time slots
+      QuerySnapshot blockedSlotsSnapshot = await _firestore
+          .collection('blockedTimeSlots')
+          .where('venueId', isEqualTo: widget.venue['id'])
+          .where('date', isEqualTo: dateStr)
+          .where('isActive', isEqualTo: true)
+          .get();
+
+      // DEBUG: Print each blocked slot
+      for (var doc in blockedSlotsSnapshot.docs) {
+        final blockData = doc.data() as Map<String, dynamic>;
+        print('BLOCKED: Court "${blockData['courtId']}", Time: '
+            '${blockData['timeSlot']}, Duration: ${blockData['duration']}h, Reason: ${blockData['reason']}');
+      }
+
       Map<String, bool> availability = {};
       Map<String, int> maxDuration = {};
 
-      // Initialize all slots as available
       for (String slot in _timeSlots) {
         availability[slot] = true;
         maxDuration[slot] = 0;
       }
 
-      // Count bookings per time slot to determine availability
+      // Process blocked time slots
+      Map<String, Set<String>> blockedCourtsPerSlot = {};
+
+      for (var doc in blockedSlotsSnapshot.docs) {
+        final blockData = doc.data() as Map<String, dynamic>;
+        final timeSlot = blockData['timeSlot'];
+        final duration = blockData['duration'] ?? 1;
+        final courtId = blockData['courtId'];
+
+        if (timeSlot != null && courtId != null) {
+          final startIndex = _timeSlots.indexOf(timeSlot);
+          if (startIndex != -1) {
+            for (int i = 0; i < duration && (startIndex + i) < _timeSlots.length; i++) {
+              final slot = _timeSlots[startIndex + i];
+              if (!blockedCourtsPerSlot.containsKey(slot)) {
+                blockedCourtsPerSlot[slot] = {};
+              }
+              blockedCourtsPerSlot[slot]!.add(courtId);
+              print('Slot $slot: Blocked court "$courtId"');
+            }
+          }
+        }
+      }
+
       Map<String, int> slotBookingCount = {};
       for (var doc in bookingsSnapshot.docs) {
         final bookingData = doc.data() as Map<String, dynamic>;
@@ -162,7 +190,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         if (timeSlot != null) {
           final startIndex = _timeSlots.indexOf(timeSlot);
           if (startIndex != -1) {
-            // Mark all slots covered by this booking as unavailable
             for (int i = 0; i < duration && (startIndex + i) < _timeSlots.length; i++) {
               final slot = _timeSlots[startIndex + i];
               slotBookingCount[slot] = (slotBookingCount[slot] ?? 0) + 1;
@@ -171,20 +198,21 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         }
       }
 
-      // Mark slots as unavailable if all courts are booked
       for (String slot in _timeSlots) {
         final bookedCourts = slotBookingCount[slot] ?? 0;
-        if (bookedCourts >= widget.courts.length) {
+        final blockedCourts = blockedCourtsPerSlot[slot]?.length ?? 0;
+        final totalUnavailable = bookedCourts + blockedCourts;
+
+        if (totalUnavailable >= widget.courts.length) {
           availability[slot] = false;
+          print('Slot $slot: UNAVAILABLE (Booked: $bookedCourts, Blocked: $blockedCourts, Total courts: ${widget.courts.length})');
         }
       }
 
-      // Calculate maximum consecutive duration for each slot
       for (int i = 0; i < _timeSlots.length; i++) {
         final slot = _timeSlots[i];
         if ((availability[slot] ?? false) && !TimezoneHelper.isTimeSlotInPast(_selectedDate, slot)) {
           int consecutiveHours = 0;
-          // Check how many consecutive hours are available from this slot
           for (int j = i; j < _timeSlots.length; j++) {
             final checkSlot = _timeSlots[j];
             if ((availability[checkSlot] ?? false) && !TimezoneHelper.isTimeSlotInPast(_selectedDate, checkSlot)) {
@@ -200,14 +228,12 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         }
       }
 
-      // Mark past time slots as unavailable using Malaysia timezone
       for (String slot in _timeSlots) {
         if (TimezoneHelper.isTimeSlotInPast(_selectedDate, slot)) {
           availability[slot] = false;
           maxDuration[slot] = 0;
         }
       }
-
       setState(() {
         _timeSlotAvailability = availability;
         _maxDurationPerSlot = maxDuration;
@@ -226,7 +252,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
 
       if (startTimeIndex == -1) return;
 
-      // Get all time slots that would be covered by the selected duration
       List<String> requiredTimeSlots = [];
       for (int i = 0; i < _selectedDuration; i++) {
         if (startTimeIndex + i < _timeSlots.length) {
@@ -234,7 +259,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         }
       }
 
-      // Get bookings for all required time slots
       List<String> bookedCourtIds = [];
       for (String timeSlot in requiredTimeSlots) {
         QuerySnapshot bookingsSnapshot = await _firestore
@@ -253,7 +277,27 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         }
       }
 
-      // Also check for bookings that overlap with our desired time range
+      // Get blocked courts
+      List<String> blockedCourtIds = [];
+      for (String timeSlot in requiredTimeSlots) {
+        QuerySnapshot blockedSnapshot = await _firestore
+            .collection('blockedTimeSlots')
+            .where('venueId', isEqualTo: widget.venue['id'])
+            .where('date', isEqualTo: dateStr)
+            .where('timeSlot', isEqualTo: timeSlot)
+            .where('isActive', isEqualTo: true)
+            .get();
+
+        for (var doc in blockedSnapshot.docs) {
+          final blockData = doc.data() as Map<String, dynamic>;
+          final courtId = blockData['courtId'];
+          if (courtId != null) {
+            blockedCourtIds.add(courtId);
+            print('Found blocked court: "$courtId"');
+          }
+        }
+      }
+
       QuerySnapshot overlappingBookings = await _firestore
           .collection('bookings')
           .where('venueId', isEqualTo: widget.venue['id'])
@@ -272,7 +316,6 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
             final bookingEndIndex = bookingStartIndex + bookingDuration;
             final ourEndIndex = startTimeIndex + _selectedDuration;
 
-            // Check if there's any overlap
             if (!(ourEndIndex <= bookingStartIndex || startTimeIndex >= bookingEndIndex)) {
               bookedCourtIds.add(courtId);
             }
@@ -280,17 +323,51 @@ class _CourtBookingPageState extends State<CourtBookingPage> {
         }
       }
 
-      // Convert to Set to remove duplicates, then back to List
-      final uniqueBookedCourtIds = bookedCourtIds.toSet();
+      QuerySnapshot overlappingBlocks = await _firestore
+          .collection('blockedTimeSlots')
+          .where('venueId', isEqualTo: widget.venue['id'])
+          .where('date', isEqualTo: dateStr)
+          .where('isActive', isEqualTo: true)
+          .get();
 
-      // Filter available courts
+      for (var doc in overlappingBlocks.docs) {
+        final blockData = doc.data() as Map<String, dynamic>;
+        final blockStartTime = blockData['timeSlot'];
+        final blockDuration = blockData['duration'] ?? 1;
+        final courtId = blockData['courtId'];
+
+        if (blockStartTime != null && courtId != null) {
+          final blockStartIndex = _timeSlots.indexOf(blockStartTime);
+          if (blockStartIndex != -1) {
+            final blockEndIndex = blockStartIndex + blockDuration;
+            final ourEndIndex = startTimeIndex + _selectedDuration;
+
+            if (!(ourEndIndex <= blockStartIndex || startTimeIndex >= blockEndIndex)) {
+              blockedCourtIds.add(courtId);
+            }
+          }
+        }
+      }
+
+      final allUnavailableCourtIds = [...bookedCourtIds, ...blockedCourtIds].toSet();
+
+
       List<Map<String, dynamic>> availableCourts = widget.courts.where((court) {
-        return !uniqueBookedCourtIds.contains(court['id']) && (court['isActive'] ?? true);
+        final isUnavailable = allUnavailableCourtIds.contains(court['id']);
+        final isActive = court['isActive'] ?? true;
+
+        if (isUnavailable) {
+          print('Court "${court['id']}" is UNAVAILABLE');
+        } else if (isActive) {
+          print('Court "${court['id']}" is AVAILABLE');
+        }
+
+        return !isUnavailable && isActive;
       }).toList();
+
 
       setState(() {
         _availableCourts = availableCourts;
-        // Reset selected court if it's no longer available
         if (_selectedCourt != null && !availableCourts.any((court) => court['id'] == _selectedCourt!['id'])) {
           _selectedCourt = null;
         }

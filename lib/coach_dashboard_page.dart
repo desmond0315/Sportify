@@ -153,28 +153,30 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
   void _listenToMessageCount() {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _messageCountSubscription = MessagingService.getUnreadMessagesCount(user.uid, 'coach')
-          .listen((count) {
-        if (mounted) {
-          setState(() {
-            _unreadMessageCount = count;
+      _messageCountSubscription =
+          MessagingService.getUnreadMessagesCount(user.uid, 'coach')
+              .listen((count) {
+            if (mounted) {
+              setState(() {
+                _unreadMessageCount = count;
+              });
+            }
           });
-        }
-      });
     }
   }
 
   void _listenToNotificationCount() {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _notificationCountSubscription = NotificationService.getUnreadCount(user.uid)
-          .listen((count) {
-        if (mounted) {
-          setState(() {
-            _unreadNotificationCount = count;
+      _notificationCountSubscription =
+          NotificationService.getUnreadCount(user.uid)
+              .listen((count) {
+            if (mounted) {
+              setState(() {
+                _unreadNotificationCount = count;
+              });
+            }
           });
-        }
-      });
     }
   }
 
@@ -183,7 +185,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
     Set<String> uniqueStudents = {};
     for (var appointment in _appointments) {
       if (appointment['userId'] != null &&
-          ['accepted', 'confirmed', 'completed'].contains(appointment['status'])) {
+          ['accepted', 'confirmed', 'completed'].contains(
+              appointment['status'])) {
         uniqueStudents.add(appointment['userId']);
       }
     }
@@ -195,8 +198,10 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
 
     _monthlyAppointments = _appointments.where((appointment) {
       if (appointment['scheduledAt'] != null &&
-          ['accepted', 'confirmed', 'completed'].contains(appointment['status'])) {
-        DateTime appointmentDate = (appointment['scheduledAt'] as Timestamp).toDate();
+          ['accepted', 'confirmed', 'completed'].contains(
+              appointment['status'])) {
+        DateTime appointmentDate = (appointment['scheduledAt'] as Timestamp)
+            .toDate();
         return appointmentDate.isAfter(startOfMonth);
       }
       return false;
@@ -204,13 +209,16 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
 
     // Calculate monthly revenue
     _monthlyRevenue = _appointments.where((appointment) {
-      if (appointment['scheduledAt'] != null && appointment['status'] == 'completed') {
-        DateTime appointmentDate = (appointment['scheduledAt'] as Timestamp).toDate();
+      if (appointment['scheduledAt'] != null &&
+          appointment['status'] == 'completed') {
+        DateTime appointmentDate = (appointment['scheduledAt'] as Timestamp)
+            .toDate();
         return appointmentDate.isAfter(startOfMonth);
       }
       return false;
     }).fold(0.0, (sum, appointment) {
-      return sum + (appointment['price']?.toDouble() ?? _currentCoachData['pricePerHour']?.toDouble() ?? 0.0);
+      return sum + (appointment['price']?.toDouble() ??
+          _currentCoachData['pricePerHour']?.toDouble() ?? 0.0);
     });
 
     // Calculate average rating
@@ -221,6 +229,26 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
       _averageRating = totalRating / _reviews.length;
     } else {
       _averageRating = _currentCoachData['rating']?.toDouble() ?? 0.0;
+    }
+  }
+
+  // Navigate to update profile page
+  void _navigateToUpdateProfile() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            CoachProfileUpdatePage(coachData: _currentCoachData),
+      ),
+    );
+
+    if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile updated successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -266,7 +294,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white.withOpacity(0.2),
-              border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.3), width: 2),
             ),
             child: ClipOval(
               child: _currentCoachData['profileImageBase64'] != null
@@ -274,7 +303,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                 base64Decode(_currentCoachData['profileImageBase64']),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
-                  return const Icon(Icons.person, color: Colors.white, size: 30);
+                  return const Icon(
+                      Icons.person, color: Colors.white, size: 30);
                 },
               )
                   : const Icon(Icons.person, color: Colors.white, size: 30),
@@ -319,12 +349,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
           // Notifications badge
           if (_unreadNotificationCount > 0)
             GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationsPage(),
-                ),
-              ),
+              onTap: () =>
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationsPage(),
+                    ),
+                  ),
               child: Container(
                 margin: const EdgeInsets.only(right: 12),
                 padding: const EdgeInsets.all(8),
@@ -334,7 +365,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                 ),
                 child: Stack(
                   children: [
-                    const Icon(Icons.notifications_outlined, color: Colors.white, size: 20),
+                    const Icon(
+                        Icons.notifications_outlined, color: Colors.white,
+                        size: 20),
                     Positioned(
                       right: -2,
                       top: -2,
@@ -345,7 +378,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                           shape: BoxShape.circle,
                         ),
                         child: Text(
-                          _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                          _unreadNotificationCount > 9
+                              ? '9+'
+                              : '$_unreadNotificationCount',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -362,12 +397,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
           // Messages badge
           if (_unreadMessageCount > 0)
             GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ChatsListPage(),
-                ),
-              ),
+              onTap: () =>
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ChatsListPage(),
+                    ),
+                  ),
               child: Container(
                 margin: const EdgeInsets.only(right: 12),
                 padding: const EdgeInsets.all(8),
@@ -377,7 +413,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                 ),
                 child: Stack(
                   children: [
-                    const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
+                    const Icon(Icons.chat_bubble_outline, color: Colors.white,
+                        size: 20),
                     Positioned(
                       right: -2,
                       top: -2,
@@ -388,7 +425,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                           shape: BoxShape.circle,
                         ),
                         child: Text(
-                          _unreadMessageCount > 9 ? '9+' : '$_unreadMessageCount',
+                          _unreadMessageCount > 9
+                              ? '9+'
+                              : '$_unreadMessageCount',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -405,12 +444,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
           // Requests badge
           if (_pendingRequestsCount > 0)
             GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CoachRequestsPage(),
-                ),
-              ),
+              onTap: () =>
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CoachRequestsPage(),
+                    ),
+                  ),
               child: Container(
                 margin: const EdgeInsets.only(right: 12),
                 padding: const EdgeInsets.all(8),
@@ -431,7 +471,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                           shape: BoxShape.circle,
                         ),
                         child: Text(
-                          _pendingRequestsCount > 9 ? '9+' : '$_pendingRequestsCount',
+                          _pendingRequestsCount > 9
+                              ? '9+'
+                              : '$_pendingRequestsCount',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -469,7 +511,15 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
       case 1:
         return _buildAppointmentsPage();
       case 2:
-        return _buildProfilePage();
+      // Navigate to update profile page when Profile tab is selected
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _navigateToUpdateProfile();
+            // Reset to dashboard after navigation
+            setState(() => _selectedIndex = 0);
+          }
+        });
+        return _buildDashboardOverview();
       default:
         return _buildDashboardOverview();
     }
@@ -501,12 +551,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                   value: '$_pendingRequestsCount',
                   icon: Icons.schedule,
                   color: Colors.orange,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CoachRequestsPage(),
-                    ),
-                  ),
+                  onTap: () =>
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CoachRequestsPage(),
+                        ),
+                      ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -566,96 +617,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
 
           const SizedBox(height: 32),
 
-          // Quick Actions
-          const Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2D3748),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Session Requests',
-                  subtitle: 'Manage requests',
-                  icon: Icons.inbox,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CoachRequestsPage(),
-                    ),
-                  ),
-                  showBadge: _pendingRequestsCount > 0,
-                  badgeCount: _pendingRequestsCount,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildActionCard(
-                  title: 'View Appointments',
-                  subtitle: 'Check your schedule',
-                  icon: Icons.calendar_today,
-                  onTap: () => setState(() => _selectedIndex = 1),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Messages',
-                  subtitle: 'Chat with students',
-                  icon: Icons.chat_bubble_outline,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ChatsListPage(),
-                    ),
-                  ),
-                  showBadge: _unreadMessageCount > 0,
-                  badgeCount: _unreadMessageCount,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Update Profile',
-                  subtitle: 'Edit your info',
-                  icon: Icons.edit,
-                  onTap: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CoachProfileUpdatePage(coachData: _currentCoachData),
-                      ),
-                    );
-
-                    if (result == true) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Profile updated successfully!'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
           // Recent Activity from real data
           _buildRecentActivity(),
         ],
@@ -676,7 +637,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
             : appointment['status'] == 'pending_approval'
             ? 'New session request received'
             : 'Session ${appointment['status']}',
-        'subtitle': '${appointment['studentName'] ?? 'Student'} - ${_formatDate(appointment['scheduledAt'])}',
+        'subtitle': '${appointment['studentName'] ?? 'Student'} - ${_formatDate(
+            appointment['scheduledAt'])}',
         'icon': appointment['status'] == 'completed'
             ? Icons.check_circle
             : appointment['status'] == 'pending_approval'
@@ -696,7 +658,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
       recentActivity.add({
         'type': 'review',
         'title': 'New review received',
-        'subtitle': '${review['rating']} stars from ${review['studentName'] ?? 'Student'}',
+        'subtitle': '${review['rating']} stars from ${review['studentName'] ??
+            'Student'}',
         'icon': Icons.star,
         'color': Colors.amber,
         'time': review['createdAt'],
@@ -754,12 +717,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
               ),
             )
           else
-            ...recentActivity.take(5).map((activity) => _buildActivityItem(
-              activity['title'],
-              activity['subtitle'],
-              activity['icon'],
-              activity['color'],
-            )),
+            ...recentActivity.take(5).map((activity) =>
+                _buildActivityItem(
+                  activity['title'],
+                  activity['subtitle'],
+                  activity['icon'],
+                  activity['color'],
+                )),
         ],
       ),
     );
@@ -804,7 +768,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
               ),
             )
           else
-            ..._appointments.map((appointment) => _buildAppointmentCard(appointment)),
+            ..._appointments.map((appointment) =>
+                _buildAppointmentCard(appointment)),
         ],
       ),
     );
@@ -862,9 +827,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(appointment['status']).withOpacity(0.1),
+                    color: _getStatusColor(appointment['status']).withOpacity(
+                        0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -880,7 +847,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
             ),
           ),
           Text(
-            'RM ${appointment['price'] ?? _currentCoachData['pricePerHour'] ?? 0}',
+            'RM ${appointment['price'] ?? _currentCoachData['pricePerHour'] ??
+                0}',
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -894,37 +862,54 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
 
   Color _getStatusColor(String? status) {
     switch (status) {
-      case 'completed': return Colors.green;
+      case 'completed':
+        return Colors.green;
       case 'accepted':
-      case 'confirmed': return Colors.blue;
+      case 'confirmed':
+        return Colors.blue;
       case 'cancelled':
-      case 'rejected': return Colors.red;
-      case 'pending_approval': return Colors.orange;
-      default: return Colors.grey;
+      case 'rejected':
+        return Colors.red;
+      case 'pending_approval':
+        return Colors.orange;
+      default:
+        return Colors.grey;
     }
   }
 
   IconData _getStatusIcon(String? status) {
     switch (status) {
-      case 'completed': return Icons.check_circle;
+      case 'completed':
+        return Icons.check_circle;
       case 'accepted':
-      case 'confirmed': return Icons.event;
+      case 'confirmed':
+        return Icons.event;
       case 'cancelled':
-      case 'rejected': return Icons.cancel;
-      case 'pending_approval': return Icons.schedule;
-      default: return Icons.help_outline;
+      case 'rejected':
+        return Icons.cancel;
+      case 'pending_approval':
+        return Icons.schedule;
+      default:
+        return Icons.help_outline;
     }
   }
 
   String _getStatusDisplayText(String? status) {
     switch (status) {
-      case 'pending_approval': return 'AWAITING RESPONSE';
-      case 'accepted': return 'ACCEPTED';
-      case 'rejected': return 'DECLINED';
-      case 'confirmed': return 'CONFIRMED';
-      case 'completed': return 'COMPLETED';
-      case 'cancelled': return 'CANCELLED';
-      default: return status?.toUpperCase() ?? 'UNKNOWN';
+      case 'pending_approval':
+        return 'AWAITING RESPONSE';
+      case 'accepted':
+        return 'ACCEPTED';
+      case 'rejected':
+        return 'DECLINED';
+      case 'confirmed':
+        return 'CONFIRMED';
+      case 'completed':
+        return 'COMPLETED';
+      case 'cancelled':
+        return 'CANCELLED';
+      default:
+        return status?.toUpperCase() ?? 'UNKNOWN';
     }
   }
 
@@ -932,56 +917,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
     if (timestamp == null) return 'No date';
     try {
       DateTime date = (timestamp as Timestamp).toDate();
-      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute
+          .toString().padLeft(2, '0')}';
     } catch (e) {
       return 'Invalid date';
     }
-  }
-
-  Widget _buildProfilePage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Coach Profile',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2D3748),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildProfileField('Name', _currentCoachData['name'] ?? ''),
-                _buildProfileField('Email', _currentCoachData['email'] ?? ''),
-                _buildProfileField('Sport', _currentCoachData['sport'] ?? ''),
-                _buildProfileField('Experience', _currentCoachData['experience'] ?? ''),
-                _buildProfileField('Location', _currentCoachData['location'] ?? ''),
-                _buildProfileField('Price per Hour', 'RM ${_currentCoachData['pricePerHour'] ?? 0}'),
-                _buildProfileField('Total Students', '$_totalStudents'),
-                _buildProfileField('Average Rating', '${_averageRating.toStringAsFixed(1)} stars'),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildStatCard({
@@ -1131,7 +1071,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
     );
   }
 
-  Widget _buildActivityItem(String title, String subtitle, IconData icon, Color color) {
+  Widget _buildActivityItem(String title, String subtitle, IconData icon,
+      Color color) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -1165,37 +1106,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileField(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF2D3748),
-              ),
             ),
           ),
         ],

@@ -1,12 +1,10 @@
-// Updated coach_booking_page.dart with Malaysia timezone support
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'my_bookings_page.dart';
 import '../services/messaging_service.dart';
 import 'services/notification_service.dart';
-import '../utils/timezone_helper.dart'; // Add this import
+import '../utils/timezone_helper.dart';
 
 class CoachBookingPage extends StatefulWidget {
   final Map<String, dynamic> coach;
@@ -1148,7 +1146,7 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
 
       final malaysiaTime = TimezoneHelper.getMalaysiaTime();
 
-      // ==================== SIMPLIFIED DATA STRUCTURE ====================
+      // SIMPLIFIED DATA STRUCTURE
       Map<String, dynamic> appointmentData = {
         // EXISTING BASIC FIELDS
         'userId': user.uid,
@@ -1194,7 +1192,7 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         'verifiedAt': null,
         'verificationNotes': '',
 
-        // RESCHEDULING FIELDS (NEW!)
+        // RESCHEDULING FIELDS
         'rescheduleCount': 0,
         'maxReschedules': 2,
         'canReschedule': true,
@@ -1229,7 +1227,7 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
       appointmentData['id'] = docRef.id;
       print('Coach appointment created with ID: ${docRef.id}');
 
-      // Create chat (existing code - keep as is)
+      // Create chat
       try {
         final chatId = await MessagingService.createOrGetChat(
           coachId: widget.coach['id'],
@@ -1258,7 +1256,7 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
         print('Error creating chat: $chatError');
       }
 
-      // Send notification to coach (existing code)
+      // Send notification to coach
       try {
         await NotificationService.notifyCoachNewRequest(
           coachId: widget.coach['id'],
@@ -1323,7 +1321,8 @@ class _CoachBookingPageState extends State<CoachBookingPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Your coaching session request has been sent to ${widget.coach['name']}. The session is scheduled for ${_formatDate(_selectedDate)} at $_selectedStartTime - $_selectedEndTime (Malaysia Time). You\'ll receive a notification once they respond to your request.',
+                  'Your coaching session request has been sent to ${widget.coach['name']}. The session is scheduled for ${_formatDate(_selectedDate)} at $_selectedStartTime - '
+                      '$_selectedEndTime (Malaysia Time). You\'ll receive a notification once they respond to your request.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,

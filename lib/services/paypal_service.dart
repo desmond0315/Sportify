@@ -64,7 +64,7 @@ class PayPalService {
             'description': description,
             'custom_id': bookingType, // 'court' or 'coach'
             'amount': {
-              'currency_code': 'MYR', // ✅ CHANGED FROM USD TO MYR
+              'currency_code': 'MYR', //  CHANGED FROM USD TO MYR
               'value': amount.toStringAsFixed(2),
             },
           }
@@ -268,6 +268,85 @@ class PayPalService {
       debugPrint('Payment confirmed successfully');
     } catch (e) {
       debugPrint('Error confirming payment: $e');
+      rethrow;
+    }
+  }
+
+  /// Confirm Tournament Payment and Update Registration
+  static Future<void> confirmTournamentPayment({
+    required String registrationId,
+    required String tournamentId,
+    required String orderId,
+    required String captureId,
+    required double amount,
+  }) async {
+    try {
+      final db = FirebaseFirestore.instance;
+
+      // Update registration status
+      await db.collection('tournament_registrations').doc(registrationId).update({
+        'status': 'confirmed',
+        'paymentStatus': 'completed',
+        'paymentMethod': 'paypal',
+        'paymentId': captureId,
+        'paypalOrderId': orderId,
+        'paidAmount': amount,
+        'paidAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Increment tournament participant count
+      await db.collection('tournaments').doc(tournamentId).update({
+        'currentParticipants': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Get registration data for notifications
+      final registrationDoc = await db.collection('tournament_registrations').doc(registrationId).get();
+      final registrationData = registrationDoc.data();
+
+      // Get tournament data
+      final tournamentDoc = await db.collection('tournaments').doc(tournamentId).get();
+      final tournamentData = tournamentDoc.data();
+
+      if (registrationData != null && tournamentData != null) {
+        // Create notification for user
+        await db.collection('notifications').add({
+          'userId': registrationData['userId'],
+          'type': 'payment',
+          'title': 'Tournament Payment Successful',
+          'message':
+          'Your payment for ${tournamentData['name']} has been confirmed. You are now registered!',
+          'data': {
+            'tournamentId': tournamentId,
+            'registrationId': registrationId,
+            'action': 'view_tournament',
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'isRead': false,
+          'priority': 'high',
+        });
+
+        // Create notification for venue owner
+        await db.collection('notifications').add({
+          'userId': tournamentData['venueOwnerId'],
+          'type': 'tournament',
+          'title': 'New Tournament Registration',
+          'message':
+          '${registrationData['userName']} has paid and joined ${tournamentData['name']}',
+          'data': {
+            'tournamentId': tournamentId,
+            'action': 'view_tournament',
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'isRead': false,
+          'priority': 'medium',
+        });
+      }
+
+      debugPrint('Tournament payment confirmed successfully');
+    } catch (e) {
+      debugPrint('Error confirming tournament payment: $e');
       rethrow;
     }
   }

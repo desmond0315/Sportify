@@ -18,8 +18,8 @@ class _ChatsListPageState extends State<ChatsListPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  StreamSubscription<List<ChatModel>>? _chatsSubscription;
-  List<ChatModel> _chats = [];
+  StreamSubscription<List<dynamic>>? _chatsSubscription; // CHANGED: List<dynamic>
+  List<dynamic> _chats = []; // CHANGED: List<dynamic>
   bool _isLoading = true;
   String _currentUserId = '';
   String _currentUserRole = '';
@@ -78,14 +78,24 @@ class _ChatsListPageState extends State<ChatsListPage> {
   }
 
   Future<void> _preloadUserProfiles() async {
-    for (ChatModel chat in _chats) {
-      final isCoach = _currentUserRole == 'coach';
-      final otherUserId = isCoach ? chat.studentId : chat.coachId;
-      final otherUserRole = isCoach ? 'student' : 'coach';
+    for (var chat in _chats) {
+      // NEW: Handle both ChatModel and VenueChatModel
+      if (chat is ChatModel) {
+        final isCoach = _currentUserRole == 'coach';
+        final otherUserId = isCoach ? chat.studentId : chat.coachId;
+        final otherUserRole = isCoach ? 'student' : 'coach';
 
-      // Only fetch if not already cached
-      if (!_userProfileCache.containsKey(otherUserId)) {
-        await _fetchUserProfile(otherUserId, otherUserRole);
+        if (!_userProfileCache.containsKey(otherUserId)) {
+          await _fetchUserProfile(otherUserId, otherUserRole);
+        }
+      } else if (chat is VenueChatModel) {
+        // For venue chats, cache student profile if we're venue owner, or venue owner profile if we're student
+        final otherUserId = _currentUserRole == 'venue_owner' ? chat.studentId : chat.venueOwnerId;
+        final otherUserRole = _currentUserRole == 'venue_owner' ? 'student' : 'venue_owner';
+
+        if (!_userProfileCache.containsKey(otherUserId)) {
+          await _fetchUserProfile(otherUserId, otherUserRole);
+        }
       }
     }
   }
@@ -95,6 +105,8 @@ class _ChatsListPageState extends State<ChatsListPage> {
       DocumentSnapshot userDoc;
       if (userRole == 'coach') {
         userDoc = await _firestore.collection('coaches').doc(userId).get();
+      } else if (userRole == 'venue_owner') {
+        userDoc = await _firestore.collection('venue_owners').doc(userId).get();
       } else {
         userDoc = await _firestore.collection('users').doc(userId).get();
       }
@@ -139,12 +151,6 @@ class _ChatsListPageState extends State<ChatsListPage> {
         ),
       ),
       centerTitle: true,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search, color: Color(0xFF2D3748)),
-          onPressed: _showSearchDialog,
-        ),
-      ],
     );
   }
 
@@ -179,7 +185,7 @@ class _ChatsListPageState extends State<ChatsListPage> {
           Text(
             _currentUserRole == 'coach'
                 ? 'Start chatting with your students when they book sessions'
-                : 'Start chatting with coaches when you book sessions',
+                : 'Start chatting when you book sessions or venues',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
@@ -209,13 +215,34 @@ class _ChatsListPageState extends State<ChatsListPage> {
     );
   }
 
-  Widget _buildChatCard(ChatModel chat) {
-    final isCoach = _currentUserRole == 'coach';
-    final otherUserName = isCoach ? chat.studentName : chat.coachName;
-    final otherUserId = isCoach ? chat.studentId : chat.coachId;
-    final otherUserRole = isCoach ? 'student' : 'coach';
-    final unreadCount = isCoach ? chat.unreadCountForCoach : chat.unreadCountForStudent;
-    final isLastMessageFromMe = chat.lastMessageSender == _currentUserId;
+  Widget _buildChatCard(dynamic chat) {
+    // NEW: Determine if this is a venue chat or coach chat
+    bool isVenueChat = chat is VenueChatModel;
+
+    String otherUserName;
+    String otherUserId;
+    String otherUserRole;
+    int unreadCount;
+    bool isLastMessageFromMe;
+
+    if (isVenueChat) {
+      // Venue chat
+      final venueChat = chat as VenueChatModel;
+      otherUserName = _currentUserRole == 'student' ? venueChat.venueName : venueChat.studentName;
+      otherUserId = _currentUserRole == 'student' ? venueChat.venueOwnerId : venueChat.studentId;
+      otherUserRole = _currentUserRole == 'student' ? 'venue_owner' : 'student';
+      unreadCount = _currentUserRole == 'student' ? venueChat.unreadCountForStudent : venueChat.unreadCountForVenueOwner;
+      isLastMessageFromMe = venueChat.lastMessageSender == _currentUserId;
+    } else {
+      // Coach chat
+      final coachChat = chat as ChatModel;
+      final isCoach = _currentUserRole == 'coach';
+      otherUserName = isCoach ? coachChat.studentName : coachChat.coachName;
+      otherUserId = isCoach ? coachChat.studentId : coachChat.coachId;
+      otherUserRole = isCoach ? 'student' : 'coach';
+      unreadCount = isCoach ? coachChat.unreadCountForCoach : coachChat.unreadCountForStudent;
+      isLastMessageFromMe = coachChat.lastMessageSender == _currentUserId;
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -232,25 +259,7 @@ class _ChatsListPageState extends State<ChatsListPage> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
-        leading: Stack(
-          children: [
-            _buildProfileAvatar(otherUserId, otherUserRole, otherUserName),
-            // Online indicator (you can implement online status later)
-            Positioned(
-              right: 2,
-              bottom: 2,
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-              ),
-            ),
-          ],
-        ),
+        leading: _buildProfileAvatar(otherUserId, otherUserRole, otherUserName),
         title: Row(
           children: [
             Expanded(
@@ -264,7 +273,9 @@ class _ChatsListPageState extends State<ChatsListPage> {
               ),
             ),
             Text(
-              _formatChatTime(chat.lastMessageTime),
+              _formatChatTime(isVenueChat
+                  ? (chat as VenueChatModel).lastMessageTime
+                  : (chat as ChatModel).lastMessageTime),
               style: TextStyle(
                 fontSize: 12,
                 color: unreadCount > 0 ? const Color(0xFFFF8A50) : Colors.grey[500],
@@ -285,7 +296,9 @@ class _ChatsListPageState extends State<ChatsListPage> {
             ],
             Expanded(
               child: Text(
-                chat.lastMessage,  // This now shows actual message preview
+                isVenueChat
+                    ? (chat as VenueChatModel).lastMessage
+                    : (chat as ChatModel).lastMessage,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -337,6 +350,8 @@ class _ChatsListPageState extends State<ChatsListPage> {
             border: Border.all(
               color: userRole == 'coach'
                   ? const Color(0xFF4CAF50)
+                  : userRole == 'venue_owner'
+                  ? const Color(0xFF8B5CF6)
                   : const Color(0xFFFF8A50),
               width: 2,
             ),
@@ -374,6 +389,15 @@ class _ChatsListPageState extends State<ChatsListPage> {
           : userName[0].toUpperCase();
     }
 
+    Color avatarColor;
+    if (userRole == 'coach') {
+      avatarColor = const Color(0xFF4CAF50);
+    } else if (userRole == 'venue_owner') {
+      avatarColor = const Color(0xFF8B5CF6);
+    } else {
+      avatarColor = const Color(0xFFFF8A50);
+    }
+
     return Container(
       width: 56,
       height: 56,
@@ -382,14 +406,10 @@ class _ChatsListPageState extends State<ChatsListPage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: userRole == 'coach'
-              ? [const Color(0xFF4CAF50), const Color(0xFF66BB6A)]
-              : [const Color(0xFFFF8A50), const Color(0xFFFFAB40)],
+          colors: [avatarColor, avatarColor.withOpacity(0.7)],
         ),
         border: Border.all(
-          color: userRole == 'coach'
-              ? const Color(0xFF4CAF50)
-              : const Color(0xFFFF8A50),
+          color: avatarColor,
           width: 2,
         ),
       ),
@@ -405,19 +425,26 @@ class _ChatsListPageState extends State<ChatsListPage> {
         ),
       )
           : Icon(
-        userRole == 'coach' ? Icons.school : Icons.person,
+        userRole == 'coach' ? Icons.school : userRole == 'venue_owner' ? Icons.business : Icons.person,
         color: Colors.white,
         size: 28,
       ),
     );
   }
 
-  void _openChat(ChatModel chat, String otherUserName, String otherUserId, String otherUserRole) {
+  void _openChat(dynamic chat, String otherUserName, String otherUserId, String otherUserRole) {
+    String chatId;
+    if (chat is VenueChatModel) {
+      chatId = chat.id;
+    } else {
+      chatId = (chat as ChatModel).id;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ChatPage(
-          chatId: chat.id,
+          chatId: chatId,
           otherUserName: otherUserName,
           otherUserId: otherUserId,
           otherUserRole: otherUserRole,
@@ -426,7 +453,15 @@ class _ChatsListPageState extends State<ChatsListPage> {
     );
   }
 
-  void _showChatOptions(ChatModel chat) {
+  void _showChatOptions(dynamic chat) {
+    String otherUserName;
+    if (chat is VenueChatModel) {
+      otherUserName = _currentUserRole == 'student' ? chat.venueName : chat.studentName;
+    } else {
+      final coachChat = chat as ChatModel;
+      otherUserName = _currentUserRole == 'coach' ? coachChat.studentName : coachChat.coachName;
+    }
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -448,7 +483,7 @@ class _ChatsListPageState extends State<ChatsListPage> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Chat with ${_currentUserRole == 'coach' ? chat.studentName : chat.coachName}',
+                'Chat with $otherUserName',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -487,9 +522,10 @@ class _ChatsListPageState extends State<ChatsListPage> {
     );
   }
 
-  void _markChatAsRead(ChatModel chat) async {
+  void _markChatAsRead(dynamic chat) async {
     try {
-      await MessagingService.markMessagesAsRead(chat.id, _currentUserId, _currentUserRole);
+      String chatId = chat is VenueChatModel ? chat.id : (chat as ChatModel).id;
+      await MessagingService.markMessagesAsRead(chatId, _currentUserId, _currentUserRole);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Marked as read')),
       );
@@ -500,13 +536,21 @@ class _ChatsListPageState extends State<ChatsListPage> {
     }
   }
 
-  void _showArchiveConfirmation(ChatModel chat) {
+  void _showArchiveConfirmation(dynamic chat) {
+    String otherUserName;
+    if (chat is VenueChatModel) {
+      otherUserName = _currentUserRole == 'student' ? chat.venueName : chat.studentName;
+    } else {
+      final coachChat = chat as ChatModel;
+      otherUserName = _currentUserRole == 'coach' ? coachChat.studentName : coachChat.coachName;
+    }
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Archive Chat'),
-          content: Text('Archive conversation with ${_currentUserRole == 'coach' ? chat.studentName : chat.coachName}?'),
+          content: Text('Archive conversation with $otherUserName?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -516,7 +560,8 @@ class _ChatsListPageState extends State<ChatsListPage> {
               onPressed: () async {
                 Navigator.pop(context);
                 try {
-                  await MessagingService.archiveChat(chat.id);
+                  String chatId = chat is VenueChatModel ? chat.id : (chat as ChatModel).id;
+                  await MessagingService.archiveChat(chatId);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Chat archived')),
@@ -539,64 +584,67 @@ class _ChatsListPageState extends State<ChatsListPage> {
     );
   }
 
-  void _showChatInfo(ChatModel chat) {
+  void _showChatInfo(dynamic chat) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Chat Information'),
-          content: Column(
+        Widget content;
+
+        if (chat is VenueChatModel) {
+          content = Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Coach: ${chat.coachName}'),
+              Text('Venue: ${chat.venueName}'),
+              Text('Venue Owner: ${chat.venueOwnerName}'),
               Text('Student: ${chat.studentName}'),
-              if (chat.appointmentId != null)
-                Text('Related to appointment: ${chat.appointmentId}'),
+              if (chat.bookingId != null)
+                Text('Related to booking: ${chat.bookingId}'),
               Text('Created: ${_formatDate(chat.createdAt)}'),
               Text('Last message: ${_formatDate(chat.lastMessageTime)}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Chat Type: Venue Conversation',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.purple,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
-          ),
+          );
+        } else {
+          final coachChat = chat as ChatModel;
+          content = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Coach: ${coachChat.coachName}'),
+              Text('Student: ${coachChat.studentName}'),
+              if (coachChat.appointmentId != null)
+                Text('Related to appointment: ${coachChat.appointmentId}'),
+              Text('Created: ${_formatDate(coachChat.createdAt)}'),
+              Text('Last message: ${_formatDate(coachChat.lastMessageTime)}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Chat Type: Coach Session',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return AlertDialog(
+          title: const Text('Chat Information'),
+          content: content,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showSearchDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        final searchController = TextEditingController();
-        return AlertDialog(
-          title: const Text('Search Chats'),
-          content: TextField(
-            controller: searchController,
-            decoration: const InputDecoration(
-              hintText: 'Search for people or messages...',
-              border: OutlineInputBorder(),
-            ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                // TODO: Implement search functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Search functionality coming soon!')),
-                );
-              },
-              child: const Text('Search'),
             ),
           ],
         );

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import '../services/messaging_service.dart';
 import '../models/message_model.dart';
 import '../services/encryption_service.dart';
@@ -39,12 +41,17 @@ class _ChatPageState extends State<ChatPage> {
   bool _isLoading = true;
   bool _isSending = false;
 
+  // ADDED: Store other user's profile image
+  String? _otherUserProfileImage;
+  bool _isLoadingProfile = true;
+
   @override
   void initState() {
     super.initState();
     _initializeUser();
     _listenToMessages();
     _markMessagesAsRead();
+    _loadOtherUserProfile(); // ADDED: Load other user's profile
   }
 
   @override
@@ -62,6 +69,41 @@ class _ChatPageState extends State<ChatPage> {
       _currentUserName = user.displayName ?? user.email?.split('@')[0] ?? 'User';
       // Determine user role (you might want to get this from Firestore)
       _currentUserRole = widget.otherUserRole == 'coach' ? 'student' : 'coach';
+    }
+  }
+
+  // ADDED: Load other user's profile image from Firestore
+  Future<void> _loadOtherUserProfile() async {
+    if (widget.otherUserId == null || widget.otherUserId!.isEmpty) {
+      setState(() => _isLoadingProfile = false);
+      return;
+    }
+
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      DocumentSnapshot userDoc;
+
+      // Determine which collection to query based on role
+      if (widget.otherUserRole == 'coach') {
+        userDoc = await firestore.collection('coaches').doc(widget.otherUserId).get();
+      } else if (widget.otherUserRole == 'venue_owner') {
+        userDoc = await firestore.collection('venue_owners').doc(widget.otherUserId).get();
+      } else {
+        userDoc = await firestore.collection('users').doc(widget.otherUserId).get();
+      }
+
+      if (userDoc.exists && mounted) {
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        setState(() {
+          _otherUserProfileImage = userData?['profileImageBase64'];
+          _isLoadingProfile = false;
+        });
+      } else {
+        setState(() => _isLoadingProfile = false);
+      }
+    } catch (e) {
+      print('Error loading other user profile: $e');
+      setState(() => _isLoadingProfile = false);
     }
   }
 
@@ -167,23 +209,8 @@ class _ChatPageState extends State<ChatPage> {
       ),
       title: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: widget.otherUserRole == 'coach'
-                  ? const Color(0xFF4CAF50).withOpacity(0.1)
-                  : const Color(0xFFFF8A50).withOpacity(0.1),
-            ),
-            child: Icon(
-              widget.otherUserRole == 'coach' ? Icons.school : Icons.person,
-              color: widget.otherUserRole == 'coach'
-                  ? const Color(0xFF4CAF50)
-                  : const Color(0xFFFF8A50),
-              size: 20,
-            ),
-          ),
+          // UPDATED: Show actual profile image or fallback to icon
+          _buildOtherUserAvatar(),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -198,7 +225,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 Text(
-                  widget.otherUserRole == 'coach' ? 'Coach' : 'Student',
+                  widget.otherUserRole == 'coach' ? 'Coach' : widget.otherUserRole == 'venue_owner' ? 'Venue Owner' : 'Student',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[600],
@@ -211,10 +238,74 @@ class _ChatPageState extends State<ChatPage> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.more_vert, color: Color(0xFF2D3748)),
-          onPressed: _showChatOptions,
+          icon: const Icon(Icons.info_outline, color: Color(0xFF2D3748)),
+          onPressed: _showChatInfo,
         ),
       ],
+    );
+  }
+
+  // ADDED: Build avatar for the other user
+  Widget _buildOtherUserAvatar() {
+    if (_otherUserProfileImage != null && _otherUserProfileImage!.isNotEmpty) {
+      try {
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: widget.otherUserRole == 'coach'
+                  ? const Color(0xFF4CAF50)
+                  : widget.otherUserRole == 'venue_owner'
+                  ? const Color(0xFF8B5CF6)
+                  : const Color(0xFFFF8A50),
+              width: 2,
+            ),
+          ),
+          child: ClipOval(
+            child: Image.memory(
+              base64Decode(_otherUserProfileImage!),
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return _buildDefaultOtherUserAvatar();
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        return _buildDefaultOtherUserAvatar();
+      }
+    } else {
+      return _buildDefaultOtherUserAvatar();
+    }
+  }
+
+  Widget _buildDefaultOtherUserAvatar() {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: widget.otherUserRole == 'coach'
+            ? const Color(0xFF4CAF50).withOpacity(0.1)
+            : widget.otherUserRole == 'venue_owner'
+            ? const Color(0xFF8B5CF6).withOpacity(0.1)
+            : const Color(0xFFFF8A50).withOpacity(0.1),
+      ),
+      child: Icon(
+        widget.otherUserRole == 'coach'
+            ? Icons.school
+            : widget.otherUserRole == 'venue_owner'
+            ? Icons.business
+            : Icons.person,
+        color: widget.otherUserRole == 'coach'
+            ? const Color(0xFF4CAF50)
+            : widget.otherUserRole == 'venue_owner'
+            ? const Color(0xFF8B5CF6)
+            : const Color(0xFFFF8A50),
+        size: 20,
+      ),
     );
   }
 
@@ -508,143 +599,6 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
       ),
-    );
-  }
-
-  void _showChatOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Chat Options',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF2D3748),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(Icons.search, color: Color(0xFF2D3748)),
-                title: const Text('Search Messages'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showSearchDialog();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.archive, color: Color(0xFF2D3748)),
-                title: const Text('Archive Chat'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showArchiveConfirmation();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.info_outline, color: Color(0xFF2D3748)),
-                title: const Text('Chat Info'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showChatInfo();
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showSearchDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        final searchController = TextEditingController();
-        return AlertDialog(
-          title: const Text('Search Messages'),
-          content: TextField(
-            controller: searchController,
-            decoration: const InputDecoration(
-              hintText: 'Enter search term...',
-              border: OutlineInputBorder(),
-            ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // TODO: Implement search functionality
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Search functionality coming soon!')),
-                );
-              },
-              child: const Text('Search'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showArchiveConfirmation() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Archive Chat'),
-          content: const Text('Are you sure you want to archive this chat? You can still access it from archived chats.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                try {
-                  await MessagingService.archiveChat(widget.chatId);
-                  if (mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Chat archived successfully')),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error archiving chat: $e')),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: const Text('Archive'),
-            ),
-          ],
-        );
-      },
     );
   }
 

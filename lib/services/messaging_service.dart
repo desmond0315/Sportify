@@ -8,13 +8,13 @@ class MessagingService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Generate chat ID from coach and student IDs
-  static String generateChatId(String coachId, String studentId) {
-    final ids = [coachId, studentId]..sort();
+  // Generate chat ID from two user IDs (works for coach, student, venue owner)
+  static String generateChatId(String userId1, String userId2) {
+    final ids = [userId1, userId2]..sort();
     return '${ids[0]}_${ids[1]}';
   }
 
-  // Create or get existing chat
+  // Create or get existing chat between student and coach
   static Future<String> createOrGetChat({
     required String coachId,
     required String coachName,
@@ -41,6 +41,7 @@ class MessagingService {
           lastMessage: 'Chat created',
           lastMessageSender: 'system',
           createdAt: DateTime.now(),
+          chatType: 'coach_student', // NEW: Specify chat type
         );
 
         await chatRef.set(chatData.toMap());
@@ -64,6 +65,61 @@ class MessagingService {
     }
   }
 
+  // NEW: Create or get chat between student and venue owner
+  static Future<String> createOrGetVenueChat({
+    required String venueId,
+    required String venueOwnerId,
+    required String venueOwnerName,
+    required String venueName,
+    required String studentId,
+    required String studentName,
+    String? bookingId,
+  }) async {
+    try {
+      final chatId = generateChatId(venueOwnerId, studentId);
+      final chatRef = _firestore.collection('chats').doc(chatId);
+
+      final chatDoc = await chatRef.get();
+
+      if (!chatDoc.exists) {
+        // Create new venue chat
+        final chatData = VenueChatModel(
+          id: chatId,
+          venueId: venueId,
+          venueOwnerId: venueOwnerId,
+          venueOwnerName: venueOwnerName,
+          venueName: venueName,
+          studentId: studentId,
+          studentName: studentName,
+          bookingId: bookingId,
+          lastMessageTime: DateTime.now(),
+          lastMessage: 'Chat created',
+          lastMessageSender: 'system',
+          createdAt: DateTime.now(),
+          chatType: 'venue_student',
+        );
+
+        await chatRef.set(chatData.toMap());
+
+        // Send welcome message
+        await sendMessage(
+          chatId: chatId,
+          senderId: 'system',
+          senderName: 'Sportify',
+          senderRole: 'system',
+          receiverId: studentId,
+          message: 'You can now chat with $venueName about your booking.',
+          messageType: 'system',
+        );
+      }
+
+      return chatId;
+    } catch (e) {
+      print('Error creating/getting venue chat: $e');
+      throw Exception('Failed to create venue chat');
+    }
+  }
+
   // Send a message
   static Future<void> sendMessage({
     required String chatId,
@@ -82,8 +138,8 @@ class MessagingService {
 
       // DON'T encrypt system messages
       if (messageType == 'system' || senderRole == 'system' || senderId == 'system') {
-        messageToStore = message;  // Store as plain text
-        iv = '';  // No IV for system messages
+        messageToStore = message;
+        iv = '';
         lastMessagePreview = message.length > 100
             ? '${message.substring(0, 100)}...'
             : message;
@@ -93,7 +149,6 @@ class MessagingService {
         messageToStore = encryptionResult['encrypted']!;
         iv = encryptionResult['iv']!;
 
-        // Show actual message preview in chat list (truncated)
         lastMessagePreview = message.length > 100
             ? '${message.substring(0, 100)}...'
             : message;
@@ -106,8 +161,8 @@ class MessagingService {
         senderName: senderName,
         senderRole: senderRole,
         receiverId: receiverId,
-        message: messageToStore,  // Encrypted for user messages, plain for system
-        iv: iv,  // Empty for system messages
+        message: messageToStore,
+        iv: iv,
         timestamp: DateTime.now(),
         messageType: messageType,
         metadata: metadata,
@@ -140,6 +195,12 @@ class MessagingService {
   }) async {
     try {
       final chatRef = _firestore.collection('chats').doc(chatId);
+      final chatDoc = await chatRef.get();
+
+      if (!chatDoc.exists) return;
+
+      final chatData = chatDoc.data()!;
+      final chatType = chatData['chatType'] ?? 'coach_student';
 
       Map<String, dynamic> updateData = {
         'lastMessage': lastMessage.length > 100 ? '${lastMessage.substring(0, 100)}...' : lastMessage,
@@ -147,11 +208,19 @@ class MessagingService {
         'lastMessageTime': FieldValue.serverTimestamp(),
       };
 
-      // Increment unread count for the receiver
-      if (senderRole == 'coach') {
-        updateData['unreadCountForStudent'] = FieldValue.increment(1);
-      } else if (senderRole == 'student') {
-        updateData['unreadCountForCoach'] = FieldValue.increment(1);
+      // Increment unread count based on chat type
+      if (chatType == 'coach_student') {
+        if (senderRole == 'coach') {
+          updateData['unreadCountForStudent'] = FieldValue.increment(1);
+        } else if (senderRole == 'student') {
+          updateData['unreadCountForCoach'] = FieldValue.increment(1);
+        }
+      } else if (chatType == 'venue_student') {
+        if (senderRole == 'venue_owner') {
+          updateData['unreadCountForStudent'] = FieldValue.increment(1);
+        } else if (senderRole == 'student') {
+          updateData['unreadCountForVenueOwner'] = FieldValue.increment(1);
+        }
       }
 
       await chatRef.update(updateData);
@@ -175,31 +244,74 @@ class MessagingService {
     });
   }
 
-  // Get user's chats stream
-  static Stream<List<ChatModel>> getUserChatsStream(String userId, String userRole) {
-    final field = userRole == 'coach' ? 'coachId' : 'studentId';
+  // Get user's chats stream (supports all chat types)
+  static Stream<List<dynamic>> getUserChatsStream(String userId, String userRole) {
+    if (userRole == 'coach') {
+      return _firestore
+          .collection('chats')
+          .where('coachId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .orderBy('lastMessageTime', descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          return ChatModel.fromMap(doc.data(), doc.id);
+        }).toList();
+      });
+    } else if (userRole == 'venue_owner') {
+      return _firestore
+          .collection('chats')
+          .where('venueOwnerId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .orderBy('lastMessageTime', descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          return VenueChatModel.fromMap(doc.data(), doc.id);
+        }).toList();
+      });
+    } else {
+      // Student - get both coach and venue chats
+      return _firestore
+          .collection('chats')
+          .where('studentId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .orderBy('lastMessageTime', descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          final data = doc.data();
+          final chatType = data['chatType'] ?? 'coach_student';
 
-    return _firestore
-        .collection('chats')
-        .where(field, isEqualTo: userId)
-        .where('isActive', isEqualTo: true)
-        .orderBy('lastMessageTime', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return ChatModel.fromMap(doc.data(), doc.id);
-      }).toList();
-    });
+          if (chatType == 'venue_student') {
+            return VenueChatModel.fromMap(data, doc.id);
+          } else {
+            return ChatModel.fromMap(data, doc.id);
+          }
+        }).toList();
+      });
+    }
   }
 
   // Mark messages as read
   static Future<void> markMessagesAsRead(String chatId, String userId, String userRole) async {
     try {
-      // Update unread count in chat
       final chatRef = _firestore.collection('chats').doc(chatId);
-      final field = userRole == 'coach' ? 'unreadCountForCoach' : 'unreadCountForStudent';
+      final chatDoc = await chatRef.get();
 
-      await chatRef.update({field: 0});
+      if (!chatDoc.exists) return;
+
+      final chatData = chatDoc.data()!;
+      final chatType = chatData['chatType'] ?? 'coach_student';
+
+      String unreadField;
+      if (chatType == 'coach_student') {
+        unreadField = userRole == 'coach' ? 'unreadCountForCoach' : 'unreadCountForStudent';
+      } else {
+        unreadField = userRole == 'venue_owner' ? 'unreadCountForVenueOwner' : 'unreadCountForStudent';
+      }
+
+      await chatRef.update({unreadField: 0});
 
       // Mark individual messages as read
       final messagesQuery = await _firestore
@@ -222,22 +334,49 @@ class MessagingService {
 
   // Get total unread messages count for user
   static Stream<int> getUnreadMessagesCount(String userId, String userRole) {
-    final field = userRole == 'coach' ? 'coachId' : 'studentId';
-
-    return _firestore
-        .collection('chats')
-        .where(field, isEqualTo: userId)
-        .where('isActive', isEqualTo: true)
-        .snapshots()
-        .map((snapshot) {
-      int totalUnread = 0;
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final unreadField = userRole == 'coach' ? 'unreadCountForCoach' : 'unreadCountForStudent';
-        totalUnread += (data[unreadField] as int? ?? 0);
-      }
-      return totalUnread;
-    });
+    if (userRole == 'coach') {
+      return _firestore
+          .collection('chats')
+          .where('coachId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .snapshots()
+          .map((snapshot) {
+        int totalUnread = 0;
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          totalUnread += (data['unreadCountForCoach'] as int? ?? 0);
+        }
+        return totalUnread;
+      });
+    } else if (userRole == 'venue_owner') {
+      return _firestore
+          .collection('chats')
+          .where('venueOwnerId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .snapshots()
+          .map((snapshot) {
+        int totalUnread = 0;
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          totalUnread += (data['unreadCountForVenueOwner'] as int? ?? 0);
+        }
+        return totalUnread;
+      });
+    } else {
+      return _firestore
+          .collection('chats')
+          .where('studentId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .snapshots()
+          .map((snapshot) {
+        int totalUnread = 0;
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          totalUnread += (data['unreadCountForStudent'] as int? ?? 0);
+        }
+        return totalUnread;
+      });
+    }
   }
 
   // Delete a message (soft delete)
@@ -265,31 +404,66 @@ class MessagingService {
     }
   }
 
-  // Search messages in a chat
-  static Future<List<MessageModel>> searchMessagesInChat(String chatId, String query) async {
+  // Create chat from booking (for venue)
+  static Future<String> createChatFromBooking(Map<String, dynamic> bookingData) async {
     try {
-      // Note: Firestore doesn't support full-text search natively
-      // This is a basic implementation that gets recent messages and filters locally
-      final snapshot = await _firestore
-          .collection('messages')
-          .where('chatId', isEqualTo: chatId)
-          .orderBy('timestamp', descending: true)
-          .limit(500)
-          .get();
-
-      final messages = snapshot.docs
-          .map((doc) => MessageModel.fromMap(doc.data(), doc.id))
-          .where((message) => message.message.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-
-      return messages;
+      return await createOrGetVenueChat(
+        venueId: bookingData['venueId'],
+        venueOwnerId: bookingData['venueOwnerId'],
+        venueOwnerName: bookingData['venueOwnerName'] ?? 'Venue Owner',
+        venueName: bookingData['venueName'] ?? 'Venue',
+        studentId: bookingData['userId'],
+        studentName: bookingData['userName'] ?? 'User',
+        bookingId: bookingData['id'],
+      );
     } catch (e) {
-      print('Error searching messages: $e');
-      return [];
+      print('Error creating chat from booking: $e');
+      rethrow;
     }
   }
 
-  // Create chat from appointment booking
+  // Send booking-related message
+  static Future<void> sendBookingMessage({
+    required String chatId,
+    required String senderId,
+    required String senderName,
+    required String senderRole,
+    required String receiverId,
+    required String bookingStatus,
+    required Map<String, dynamic> bookingData,
+  }) async {
+    String message;
+    switch (bookingStatus) {
+      case 'confirmed':
+        message = 'Your booking has been confirmed! 🎉\nBooking: ${bookingData['date']} at ${bookingData['startTime']}';
+        break;
+      case 'rejected':
+        message = 'Your booking request has been declined. Feel free to book another time slot.';
+        break;
+      case 'cancelled':
+        message = 'The booking scheduled for ${bookingData['date']} at ${bookingData['startTime']} has been cancelled.';
+        break;
+      default:
+        message = 'Booking status updated: $bookingStatus';
+    }
+
+    await sendMessage(
+      chatId: chatId,
+      senderId: senderId,
+      senderName: senderName,
+      senderRole: senderRole,
+      receiverId: receiverId,
+      message: message,
+      messageType: 'system',
+      metadata: {
+        'bookingId': bookingData['id'],
+        'bookingStatus': bookingStatus,
+        'bookingData': bookingData,
+      },
+    );
+  }
+
+  // Create chat from appointment booking (for coach)
   static Future<String> createChatFromAppointment(Map<String, dynamic> appointmentData) async {
     try {
       return await createOrGetChat(

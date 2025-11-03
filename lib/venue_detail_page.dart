@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import 'court_booking_page.dart';
+import '../services/messaging_service.dart';
+import 'chat_page.dart';
+import 'all_venue_reviews_page.dart';
 
 class VenueDetailPage extends StatefulWidget {
   final Map<String, dynamic> venue;
@@ -15,9 +19,11 @@ class VenueDetailPage extends StatefulWidget {
 class _VenueDetailPageState extends State<VenueDetailPage>
     with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool _isLoadingCourts = true;
   bool _isLoadingReviews = true;
+  bool _isCreatingChat = false;
 
   List<Map<String, dynamic>> _courts = [];
   List<Map<String, dynamic>> _reviews = [];
@@ -110,6 +116,91 @@ class _VenueDetailPageState extends State<VenueDetailPage>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error fetching reviews: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // NEW: Handle contact venue action
+  Future<void> _handleContactVenue() async {
+    final currentUser = _auth.currentUser;
+
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login to contact the venue'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isCreatingChat = true;
+    });
+
+    try {
+      // Get current user's name
+      String userName = currentUser.displayName ?? currentUser.email?.split('@')[0] ?? 'User';
+
+      // Try to get user's actual name from Firestore
+      try {
+        final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          userName = userData?['name'] ?? userData?['username'] ?? userName;
+        }
+      } catch (e) {
+        print('Could not fetch user name: $e');
+      }
+
+      // Get venue owner info from venue data
+      final venueOwnerId = widget.venue['ownerId'] ?? widget.venue['venueOwnerId'] ?? '';
+      final venueOwnerName = widget.venue['ownerName'] ?? widget.venue['venueOwnerName'] ?? 'Venue Owner';
+
+      if (venueOwnerId.isEmpty) {
+        throw Exception('Venue owner information not available');
+      }
+
+      // Create or get chat with venue owner
+      final chatId = await MessagingService.createOrGetVenueChat(
+        venueId: widget.venue['id'],
+        venueOwnerId: venueOwnerId,
+        venueOwnerName: venueOwnerName,
+        venueName: widget.venue['name'] ?? 'Venue',
+        studentId: currentUser.uid,
+        studentName: userName,
+      );
+
+      setState(() {
+        _isCreatingChat = false;
+      });
+
+      // Navigate to chat page
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatPage(
+              chatId: chatId,
+              otherUserName: widget.venue['name'] ?? 'Venue',
+              otherUserId: venueOwnerId,
+              otherUserRole: 'venue_owner',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isCreatingChat = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating chat: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -244,7 +335,21 @@ class _VenueDetailPageState extends State<VenueDetailPage>
         ),
         onPressed: () => Navigator.pop(context),
       ),
-      // actions property removed - no more favorite and share icons
+      // NEW: Add Contact button in AppBar
+      actions: [
+        IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
+          ),
+          onPressed: _isCreatingChat ? null : _handleContactVenue,
+        ),
+        const SizedBox(width: 8),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
@@ -1030,7 +1135,15 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               ),
               TextButton(
                 onPressed: () {
-                  // TODO: Navigate to all reviews page
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AllVenueReviewsPage(
+                        venueId: widget.venue['id'],
+                        venueName: widget.venue['name'] ?? 'Venue',
+                      ),
+                    ),
+                  );
                 },
                 child: const Text(
                   'View all',

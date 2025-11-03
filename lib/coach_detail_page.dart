@@ -747,11 +747,6 @@ class _CoachDetailPageState extends State<CoachDetailPage> {
                         ],
                       ),
                     ),
-                    const Icon(
-                      Icons.arrow_forward_ios,
-                      color: Color(0xFFFF8A50),
-                      size: 16,
-                    ),
                   ],
                 ),
               );

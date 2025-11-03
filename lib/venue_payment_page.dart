@@ -1,5 +1,3 @@
-// venue_payment_page.dart - Clean PayPal Version (No Deep Links)
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,8 +14,7 @@ class VenuePaymentPage extends StatefulWidget {
   State<VenuePaymentPage> createState() => _VenuePaymentPageState();
 }
 
-class _VenuePaymentPageState extends State<VenuePaymentPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+class _VenuePaymentPageState extends State<VenuePaymentPage> with WidgetsBindingObserver {  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool _isProcessing = false;
@@ -25,6 +22,173 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
   bool _isPollingPayment = false;
 
   String? _currentOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkExistingPayment();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _currentOrderId != null && !_isPollingPayment) {
+      _checkPaymentStatusNow();
+    }
+  }
+
+  Future<void> _checkPaymentStatusNow() async {
+    if (_currentOrderId == null) return;
+
+    setState(() {
+      _isProcessing = true;
+      _isPollingPayment = true;
+    });
+
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+
+      final orderDetails = await PayPalService.getOrderDetails(_currentOrderId!);
+
+      if (orderDetails['success']) {
+        final status = orderDetails['data']['status'];
+
+        if (status == 'COMPLETED' || status == 'APPROVED') {
+          final captureResult = await PayPalService.captureOrder(_currentOrderId!);
+
+          if (captureResult['success']) {
+            await PayPalService.confirmPayment(
+              bookingId: widget.booking['id'],
+              bookingType: 'court',
+              orderId: _currentOrderId!,
+              captureId: captureResult['captureId'],
+              amount: double.parse(
+                  orderDetails['data']['purchase_units'][0]['amount']['value']
+              ),
+            );
+
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+                _isPollingPayment = false;
+              });
+              _showPaymentSuccessDialog();
+            }
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      print('Error checking payment: $e');
+    }
+
+    if (mounted) {
+      setState(() => _isProcessing = false);
+      _startPaymentPolling();
+    }
+  }
+
+  Future<void> _checkExistingPayment() async {
+    final existingOrderId = widget.booking['paypalOrderId'];
+    final paymentStatus = widget.booking['paymentStatus'];
+
+    if (existingOrderId != null && paymentStatus == 'processing') {
+      _currentOrderId = existingOrderId;
+
+      if (mounted) {
+        final shouldResume = await _showResumePaymentDialog();
+
+        if (shouldResume == true) {
+          setState(() {
+            _isPollingPayment = true;
+            _agreeToTerms = true;
+          });
+          _startPaymentPolling();
+        } else {
+          await _cancelOldPaymentAndReset();
+        }
+      }
+    }
+  }
+
+  Future<bool?> _showResumePaymentDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.payment, color: Colors.orange[700], size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Payment In Progress')),
+          ],
+        ),
+        content: const Text(
+          'You have an incomplete payment for this booking. Would you like to continue checking the status or start a new payment?',
+          style: TextStyle(fontSize: 15, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Start New Payment'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0070BA),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text(
+              'Check Status',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelOldPaymentAndReset() async {
+    try {
+      await _firestore.collection('bookings').doc(widget.booking['id']).update({
+        'paypalOrderId': FieldValue.delete(),
+        'paymentStatus': 'pending_payment',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _currentOrderId = null;
+        _isPollingPayment = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Previous payment cancelled. You can start a new payment.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error resetting payment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error resetting payment: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +306,7 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
           const Divider(height: 32),
           _buildSummaryRow(
             'Total Amount',
-            'RM ${_formatRM(widget.booking['totalPrice'] ?? 0)}', // ✅ CHANGED
+            'RM ${_formatRM(widget.booking['totalPrice'] ?? 0)}',
             isTotal: true,
           ),
         ],
@@ -328,7 +492,6 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
           ),
           const SizedBox(height: 12),
           _buildPolicyItem('✓ Free cancellation up to 24 hours before'),
-          _buildPolicyItem('✓ 50% refund if cancelled 12-24 hours before'),
           _buildPolicyItem('✓ No refund for cancellations within 12 hours'),
           _buildPolicyItem('✓ Full refund if venue cancels'),
         ],
@@ -447,6 +610,7 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
 
   Widget _buildPaymentButton() {
     final canPay = _agreeToTerms && !_isProcessing && !_isPollingPayment;
+    final hasExistingPayment = _currentOrderId != null && _isPollingPayment;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -488,7 +652,9 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
                 const Icon(Icons.lock_outline, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  'PAY WITH PAYPAL - RM ${_formatRM(widget.booking['totalPrice'] ?? 0)}', // ✅ CHANGED
+                  hasExistingPayment
+                      ? 'CHECKING PAYMENT STATUS...'
+                      : 'PAY WITH PAYPAL - RM ${_formatRM(widget.booking['totalPrice'] ?? 0)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -519,10 +685,9 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
       }
 
       final amountRM = (widget.booking['totalPrice'] ?? 0).toDouble();
-      // ❌ REMOVE: final amountUSD = amountRM / 4.5;
 
       final orderResult = await PayPalService.createOrder(
-        amount: amountRM, // ✅ CHANGED - Send RM directly
+        amount: amountRM, //  CHANGED - Send RM directly
         description: 'Court Booking - ${widget.booking['venueName']} - ${widget.booking['date']}',
         bookingId: widget.booking['id'],
         bookingType: 'court',
@@ -618,104 +783,104 @@ class _VenuePaymentPageState extends State<VenuePaymentPage> {
     );
   }
 
-  void _showPaymentSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF4CAF50),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.check, color: Colors.white, size: 48),
+void _showPaymentSuccessDialog() {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext context) {
+      return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF4CAF50),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Payment Successful!',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF2D3748),
-                  ),
+                child: const Icon(Icons.check, color: Colors.white, size: 48),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Payment Successful!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2D3748),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Your court booking at ${widget.booking['venueName']} is now confirmed for ${widget.booking['date']} at ${widget.booking['timeSlot']}.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    height: 1.4,
-                  ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your court booking at ${widget.booking['venueName']} is now confirmed for ${widget.booking['date']} at ${widget.booking['timeSlot']}.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  height: 1.4,
                 ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const MyBookingsPage(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0070BA),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    // Close dialog first
+                    Navigator.of(context).pop();
+
+                    // Then navigate back to MyBookingsPage
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const MyBookingsPage(),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0070BA),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'View My Bookings',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text(
-                      'Back to Venues',
-                      style: TextStyle(
-                        color: Color(0xFF2D3748),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
+                  child: const Text(
+                    'View My Bookings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    // Close dialog and go back to home
+                    Navigator.of(context).pop(); // Pop dialog
+                    Navigator.of(context).popUntil((route) => route.isFirst); // Go to home
+                  },
+                  child: const Text(
+                    'Back to Venues',
+                    style: TextStyle(
+                      color: Color(0xFF2D3748),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 }

@@ -2,18 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../services/paypal_service.dart';
+import 'services/paypal_service.dart';
 
-class PaymentPage extends StatefulWidget {
-  final Map<String, dynamic> appointment;
+class TournamentPaymentPage extends StatefulWidget {
+  final Map<String, dynamic> tournament;
+  final String registrationId;
 
-  const PaymentPage({Key? key, required this.appointment}) : super(key: key);
+  const TournamentPaymentPage({
+    Key? key,
+    required this.tournament,
+    required this.registrationId,
+  }) : super(key: key);
 
   @override
-  State<PaymentPage> createState() => _PaymentPageState();
+  State<TournamentPaymentPage> createState() => _TournamentPaymentPageState();
 }
 
-class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
+class _TournamentPaymentPageState extends State<TournamentPaymentPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -22,189 +27,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
   bool _isPollingPayment = false;
 
   String? _currentOrderId;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _checkExistingPayment();
-  }
-
-  // CHECK FOR EXISTING PAYMENT
-  Future<void> _checkExistingPayment() async {
-    // Check if there's already a PayPal order in progress
-    final existingOrderId = widget.appointment['paypalOrderId'];
-    final paymentStatus = widget.appointment['paymentStatus'];
-
-    if (existingOrderId != null && paymentStatus == 'processing') {
-      // There's an existing payment in progress
-      _currentOrderId = existingOrderId;
-
-      // Show dialog asking user what to do
-      if (mounted) {
-        final shouldResume = await _showResumePaymentDialog();
-
-        if (shouldResume == true) {
-          // Resume payment verification
-          setState(() {
-            _isPollingPayment = true;
-            _agreeToTerms = true; // Auto-check terms since they agreed before
-          });
-          _startPaymentPolling();
-        } else {
-          // Create new payment (cancel old one)
-          await _cancelOldPaymentAndReset();
-        }
-      }
-    }
-  }
-
-  // SHOW RESUME DIALOG
-  Future<bool?> _showResumePaymentDialog() async {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.payment, color: Colors.orange[700], size: 28),
-            const SizedBox(width: 12),
-            const Expanded(child: Text('Payment In Progress')),
-          ],
-        ),
-        content: const Text(
-          'You have an incomplete payment for this booking. Would you like to continue checking the status or start a new payment?',
-          style: TextStyle(fontSize: 15, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Start New Payment'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0070BA),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text(
-              'Check Status',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // CANCEL OLD PAYMENT
-  Future<void> _cancelOldPaymentAndReset() async {
-    try {
-      // Reset payment status in Firestore
-      await _firestore
-          .collection('coach_appointments')
-          .doc(widget.appointment['id'])
-          .update({
-        'paypalOrderId': FieldValue.delete(),
-        'paymentStatus': 'pending',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      setState(() {
-        _currentOrderId = null;
-        _isPollingPayment = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Previous payment cancelled. You can start a new payment.'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error resetting payment: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error resetting payment: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When app returns from background (after PayPal payment)
-    if (state == AppLifecycleState.resumed && _currentOrderId != null && !_isPollingPayment) {
-      // Check payment immediately when returning to app
-      _checkPaymentStatusNow();
-    }
-  }
-
-  Future<void> _checkPaymentStatusNow() async {
-    if (_currentOrderId == null) return;
-
-    setState(() {
-      _isProcessing = true;
-      _isPollingPayment = true;
-    });
-
-    try {
-      // Wait a bit for PayPal to process
-      await Future.delayed(const Duration(seconds: 2));
-
-      final orderDetails = await PayPalService.getOrderDetails(_currentOrderId!);
-
-      if (orderDetails['success']) {
-        final status = orderDetails['data']['status'];
-
-        if (status == 'COMPLETED' || status == 'APPROVED') {
-          final captureResult = await PayPalService.captureOrder(_currentOrderId!);
-
-          if (captureResult['success']) {
-            await PayPalService.confirmPayment(
-              bookingId: widget.appointment['id'],
-              bookingType: 'coach',
-              orderId: _currentOrderId!,
-              captureId: captureResult['captureId'],
-              amount: double.parse(
-                  orderDetails['data']['purchase_units'][0]['amount']['value']
-              ),
-            );
-
-            if (mounted) {
-              setState(() {
-                _isProcessing = false;
-                _isPollingPayment = false;
-              });
-              _showPaymentSuccessDialog();
-            }
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      print('Error checking payment: $e');
-    }
-
-    // If not successful immediately, continue polling
-    if (mounted) {
-      setState(() => _isProcessing = false);
-      _startPaymentPolling();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -227,11 +49,11 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildBookingSummary(),
+                    _buildTournamentSummary(),
                     const SizedBox(height: 24),
                     _buildPayPalInfo(),
                     const SizedBox(height: 24),
-                    _buildReschedulingPolicy(),
+                    _buildTournamentPolicy(),
                     const SizedBox(height: 24),
                     _buildTermsCheckbox(),
                     if (_isPollingPayment) ...[
@@ -269,7 +91,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildBookingSummary() {
+  Widget _buildTournamentSummary() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -295,14 +117,14 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
-                  Icons.receipt_long,
+                  Icons.emoji_events,
                   color: Color(0xFFFF8A50),
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
               const Text(
-                'Booking Summary',
+                'Tournament Registration',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -312,15 +134,15 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: 20),
-          _buildSummaryRow('Coach', widget.appointment['coachName'] ?? 'Coach'),
-          _buildSummaryRow('Sport', widget.appointment['coachSport'] ?? 'Sport'),
-          _buildSummaryRow('Date', widget.appointment['date'] ?? 'N/A'),
-          _buildSummaryRow('Time', '${widget.appointment['timeSlot']} - ${widget.appointment['endTime']}'),
-          _buildSummaryRow('Duration', '${widget.appointment['duration']} hour(s)'),
+          _buildSummaryRow('Tournament', widget.tournament['name'] ?? 'Unknown Tournament'),
+          _buildSummaryRow('Venue', widget.tournament['venueName'] ?? 'N/A'),
+          _buildSummaryRow('Sport', widget.tournament['sport'] ?? 'N/A'),
+          _buildSummaryRow('Format', widget.tournament['format'] ?? 'N/A'),
+          _buildSummaryRow('Start Date', _formatDate(widget.tournament['startDate'])),
           const Divider(height: 32),
           _buildSummaryRow(
-            'Total Amount',
-            'RM ${_formatRM(widget.appointment['paymentAmount'] ?? widget.appointment['price'] ?? 0)}',
+            'Entry Fee',
+            'RM ${_formatRM(widget.tournament['entryFee'] ?? 0)}',
             isTotal: true,
           ),
         ],
@@ -342,12 +164,15 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
               color: isTotal ? const Color(0xFF2D3748) : Colors.grey[600],
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: isTotal ? 18 : 14,
-              fontWeight: isTotal ? FontWeight.w700 : FontWeight.w600,
-              color: isTotal ? const Color(0xFFFF8A50) : const Color(0xFF2D3748),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: isTotal ? 18 : 14,
+                fontWeight: isTotal ? FontWeight.w700 : FontWeight.w600,
+                color: isTotal ? const Color(0xFFFF8A50) : const Color(0xFF2D3748),
+              ),
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -479,35 +304,35 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildReschedulingPolicy() {
+  Widget _buildTournamentPolicy() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue[50],
+        color: Colors.orange[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue[200]!),
+        border: Border.all(color: Colors.orange[200]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+              Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
               const SizedBox(width: 8),
               Text(
-                'Rescheduling Policy',
+                'Tournament Policy',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: Colors.blue[900],
+                  color: Colors.orange[900],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _buildPolicyItem('✓ No refunds but you can reschedule up to 2 times'),
-          _buildPolicyItem('✓ Must reschedule 24+ hours before session'),
-          _buildPolicyItem('✓ Coach must approve new time'),
+          _buildPolicyItem('✓ Entry fee is non-refundable once paid'),
+          _buildPolicyItem('✓ You will be confirmed as a participant after payment'),
+          _buildPolicyItem('✓ Check tournament rules and regulations'),
         ],
       ),
     );
@@ -520,7 +345,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
         text,
         style: TextStyle(
           fontSize: 14,
-          color: Colors.blue[800],
+          color: Colors.orange[800],
           height: 1.4,
         ),
       ),
@@ -554,20 +379,18 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                     children: [
                       const TextSpan(text: 'I agree to the '),
                       TextSpan(
-                        text: 'Terms & Conditions',
+                        text: 'Tournament Policy',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: Colors.blue[700],
-                          decoration: TextDecoration.underline,
                         ),
                       ),
-                      const TextSpan(text: ' and '),
+                      const TextSpan(text: ' and understand the '),
                       TextSpan(
-                        text: 'Rescheduling Policy',
+                        text: 'Entry Fee Policy',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: Colors.blue[700],
-                          decoration: TextDecoration.underline,
                         ),
                       ),
                     ],
@@ -617,6 +440,16 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
               color: Colors.grey[600],
             ),
           ),
+          const SizedBox(height: 12),
+          Text(
+            'This may take a few moments...',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
         ],
       ),
     );
@@ -624,8 +457,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
 
   Widget _buildPaymentButton() {
     final canPay = _agreeToTerms && !_isProcessing && !_isPollingPayment;
-    final amount = widget.appointment['paymentAmount'] ?? widget.appointment['price'] ?? 0;
-    final hasExistingPayment = _currentOrderId != null && _isPollingPayment;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -667,9 +498,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                 const Icon(Icons.lock_outline, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  hasExistingPayment
-                      ? 'CHECKING PAYMENT STATUS...'
-                      : 'PAY WITH PAYPAL - RM ${_formatRM(amount)}',
+                  'PAY WITH PAYPAL - RM ${_formatRM(widget.tournament['entryFee'] ?? 0)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -690,6 +519,29 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     return value.toStringAsFixed(2);
   }
 
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'TBA';
+    if (timestamp is Timestamp) {
+      final date = timestamp.toDate();
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
+      ];
+      return '${date.day} ${months[date.month - 1]} ${date.year}';
+    }
+    return 'TBA';
+  }
+
   Future<void> _handlePayment() async {
     setState(() => _isProcessing = true);
 
@@ -699,21 +551,22 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
         throw 'Please login to complete payment';
       }
 
-      final amountRM = (widget.appointment['paymentAmount'] ?? widget.appointment['price'] ?? 0).toDouble();
+      final amountRM = (widget.tournament['entryFee'] ?? 0).toDouble();
 
       final orderResult = await PayPalService.createOrder(
         amount: amountRM,
-        description: 'Coach Booking - ${widget.appointment['coachName']} - ${widget.appointment['date']}',
-        bookingId: widget.appointment['id'],
-        bookingType: 'coach',
+        description: 'Tournament Entry: ${widget.tournament['name']}',
+        bookingId: widget.registrationId,
+        bookingType: 'tournament',
       );
 
       if (orderResult['success']) {
         _currentOrderId = orderResult['orderId'];
 
+        // Update registration with PayPal order ID
         await _firestore
-            .collection('coach_appointments')
-            .doc(widget.appointment['id'])
+            .collection('tournament_registrations')
+            .doc(widget.registrationId)
             .update({
           'paypalOrderId': orderResult['orderId'],
           'paymentMethod': 'paypal',
@@ -721,6 +574,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
+        // Open PayPal in external browser
         final Uri paymentUri = Uri.parse(orderResult['approvalUrl']);
         if (await canLaunchUrl(paymentUri)) {
           await launchUrl(paymentUri, mode: LaunchMode.externalApplication);
@@ -756,28 +610,150 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
   Future<void> _startPaymentPolling() async {
     if (_currentOrderId == null) return;
 
-    final paymentSuccess = await PayPalService.pollPaymentStatus(
-      orderId: _currentOrderId!,
-      bookingId: widget.appointment['id'],
-      bookingType: 'coach',
-      maxAttempts: 60,
-      interval: const Duration(seconds: 10),
-    );
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
 
-    if (mounted) {
-      setState(() => _isPollingPayment = false);
+      // Poll payment status (checking every 10 seconds for up to 10 minutes)
+      bool paymentSuccess = false;
+      int attempts = 0;
+      const maxAttempts = 60; // 10 minutes
 
-      if (paymentSuccess) {
-        _showPaymentSuccessDialog();
-      } else {
+      while (attempts < maxAttempts && mounted) {
+        attempts++;
+
+        print('Checking payment status... Attempt $attempts/$maxAttempts');
+
+        final orderDetails = await PayPalService.getOrderDetails(_currentOrderId!);
+
+        if (orderDetails['success']) {
+          final status = orderDetails['data']['status'];
+
+          if (status == 'COMPLETED' || status == 'APPROVED') {
+            // Payment successful! Capture it
+            final captureResult = await PayPalService.captureOrder(_currentOrderId!);
+
+            if (captureResult['success']) {
+              await _confirmPayment(
+                captureId: captureResult['captureId'],
+                amount: widget.tournament['entryFee'].toDouble(),
+              );
+              paymentSuccess = true;
+              break;
+            }
+          } else if (status == 'VOIDED' || status == 'EXPIRED') {
+            print('Payment cancelled or expired');
+            break;
+          }
+        }
+
+        // Wait 10 seconds before next check
+        await Future.delayed(const Duration(seconds: 10));
+      }
+
+      if (mounted) {
+        setState(() => _isPollingPayment = false);
+
+        if (paymentSuccess) {
+          _showPaymentSuccessDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Payment verification timed out. Please check your tournament registrations.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error polling payment: $e');
+      if (mounted) {
+        setState(() => _isPollingPayment = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment verification timed out. Please check your bookings.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
+          SnackBar(
+            content: Text('Error verifying payment: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
+    }
+  }
+
+  Future<void> _confirmPayment({
+    required String captureId,
+    required double amount,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Update registration status to confirmed
+      await _firestore
+          .collection('tournament_registrations')
+          .doc(widget.registrationId)
+          .update({
+        'paymentStatus': 'completed',
+        'paymentMethod': 'paypal',
+        'paymentId': captureId,
+        'paypalOrderId': _currentOrderId,
+        'paidAmount': amount,
+        'paidAt': FieldValue.serverTimestamp(),
+        'status': 'confirmed',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Increment tournament participant count
+      await _firestore
+          .collection('tournaments')
+          .doc(widget.tournament['id'])
+          .update({
+        'currentParticipants': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Get user data for notification
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userData = userDoc.data();
+
+      // Create notification for user
+      await _firestore.collection('notifications').add({
+        'userId': user.uid,
+        'type': 'payment',
+        'title': 'Tournament Payment Successful',
+        'message':
+        'Your payment for ${widget.tournament['name']} has been confirmed. You are now registered!',
+        'data': {
+          'tournamentId': widget.tournament['id'],
+          'registrationId': widget.registrationId,
+          'action': 'view_tournament',
+        },
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'priority': 'high',
+      });
+
+      // Create notification for venue owner
+      await _firestore.collection('notifications').add({
+        'userId': widget.tournament['venueOwnerId'],
+        'type': 'tournament',
+        'title': 'New Tournament Registration',
+        'message':
+        '${userData?['name'] ?? 'A participant'} has paid and joined ${widget.tournament['name']}',
+        'data': {
+          'tournamentId': widget.tournament['id'],
+          'action': 'view_tournament',
+        },
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'priority': 'medium',
+      });
+
+      print('Payment confirmed successfully');
+    } catch (e) {
+      print('Error confirming payment: $e');
+      rethrow;
     }
   }
 
@@ -785,8 +761,10 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Payment in Progress'),
-        content: const Text('Payment verification is still in progress. Are you sure you want to leave?'),
+        content: const Text(
+            'Payment verification is still in progress. Are you sure you want to leave?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -794,6 +772,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Leave'),
           ),
         ],
@@ -830,10 +809,11 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF2D3748),
                   ),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Your coaching session is now confirmed. You can chat with your coach and reschedule if needed.',
+                  'You are now registered for ${widget.tournament['name']}!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -842,13 +822,68 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Amount Paid:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          Text(
+                            'RM ${_formatRM(widget.tournament['entryFee'])}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Payment Method:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          Text(
+                            'PayPal',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
+                      Navigator.of(context).pop(); // Close dialog
+                      Navigator.of(context).pop(true); // Return to My Tournaments with refresh flag
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0070BA),
@@ -858,9 +893,28 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text(
-                      'Done',
+                      'View My Tournaments',
                       style: TextStyle(
                         color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(); // Close dialog
+                      Navigator.of(context).pop(); // Go back to detail page
+                      Navigator.of(context).pop(); // Go back to tournaments list
+                    },
+                    child: const Text(
+                      'Back to Tournaments',
+                      style: TextStyle(
+                        color: Color(0xFF2D3748),
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
                       ),

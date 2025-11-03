@@ -140,29 +140,43 @@ class ReviewService {
         return false;
       }
 
-      // Check if booking date has passed
+      // Check if booking TIME has passed (not just the date)
       final bookingDateStr = bookingData['date'] as String?;
-      if (bookingDateStr != null) {
+      final endTimeStr = bookingData['endTime'] as String?;
+
+      if (bookingDateStr != null && endTimeStr != null) {
         try {
+          // Parse the booking date (YYYY-MM-DD)
           final dateParts = bookingDateStr.split('-');
-          final bookingDate = DateTime(
-            int.parse(dateParts[0]),
-            int.parse(dateParts[1]),
-            int.parse(dateParts[2]),
-          );
+          final year = int.parse(dateParts[0]);
+          final month = int.parse(dateParts[1]);
+          final day = int.parse(dateParts[2]);
 
+          // Parse the end time (HH:MM)
+          final timeParts = endTimeStr.split(':');
+          final hour = int.parse(timeParts[0]);
+          final minute = int.parse(timeParts[1]);
+
+          // Create the booking end datetime
+          final bookingEndTime = DateTime(year, month, day, hour, minute);
           final now = DateTime.now();
-          final today = DateTime(now.year, now.month, now.day);
 
-          // Booking must be in the past
-          if (bookingDate.isAfter(today) || bookingDate.isAtSameMomentAs(today)) {
-            print('DEBUG: Booking date has not passed yet');
+          // Booking end time must have passed
+          if (!now.isAfter(bookingEndTime)) {
+            print('DEBUG: Booking end time has not passed yet');
+            print('DEBUG: Booking ends at: $bookingEndTime');
+            print('DEBUG: Current time: $now');
             return false;
           }
+
+          print('DEBUG: Booking end time has passed');
         } catch (e) {
-          print('DEBUG: Error parsing booking date: $e');
+          print('DEBUG: Error parsing booking date/time: $e');
           return false;
         }
+      } else {
+        print('DEBUG: Missing date or endTime field');
+        return false;
       }
 
       // Must be confirmed (payment completed) and not cancelled
@@ -174,8 +188,8 @@ class ReviewService {
         return false;
       }
 
-      if (paymentStatus != 'completed') {
-        print('DEBUG: Payment not completed');
+      if (paymentStatus != 'completed' && paymentStatus != 'paid' && paymentStatus != 'held_by_admin') {
+        print('DEBUG: Payment not completed. Status: $paymentStatus');
         return false;
       }
 

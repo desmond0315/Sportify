@@ -17,7 +17,6 @@ class _LoginPageState extends State<LoginPage> {
   final AuthService _authService = AuthService();
   bool _obscurePassword = true;
   bool _isLoading = false;
-  String _loginType = 'player'; // 'player' or 'coach'
 
   @override
   void dispose() {
@@ -98,7 +97,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 20),
 
-                  // SPORTIFY Title (same as before)
+                  // SPORTIFY Title
                   ShaderMask(
                     shaderCallback: (bounds) => const LinearGradient(
                       begin: Alignment.topLeft,
@@ -122,18 +121,12 @@ class _LoginPageState extends State<LoginPage> {
                   ),
 
                   const SizedBox(height: 32),
-
-                  // Login Type Selection
-                  _buildLoginTypeSelection(),
-
-                  const SizedBox(height: 24),
-
-                  // Welcome Section (dynamic based on login type)
+                  // Welcome Section
                   Column(
                     children: [
-                      Text(
-                        _loginType == 'coach' ? 'Coach Portal' : 'Welcome Back!',
-                        style: const TextStyle(
+                      const Text(
+                        'Welcome Back!',
+                        style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF2D3748),
@@ -142,9 +135,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        _loginType == 'coach'
-                            ? 'Access your coaching dashboard'
-                            : 'Sign in to continue your fitness journey',
+                        'Sign in to continue your sports journey',
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey[600],
@@ -157,13 +148,13 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 32),
 
-                  // Form (same as before but with updated button text)
+                  // Form
                   Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Email Field (same as before)
+                        // Email Field
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -257,7 +248,7 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 24),
 
-                        // Password Field (same as before)
+                        // Password Field
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -366,7 +357,7 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 20),
 
-                        // Forgot Password (same as before)
+                        // Forgot Password
                         Align(
                           alignment: Alignment.centerRight,
                           child: GestureDetector(
@@ -388,7 +379,7 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 32),
 
-                        // Login Button (updated text based on login type)
+                        // Login Button
                         Container(
                           width: double.infinity,
                           height: 56,
@@ -430,9 +421,9 @@ class _LoginPageState extends State<LoginPage> {
                                 strokeWidth: 2.5,
                               ),
                             )
-                                : Text(
-                              _loginType == 'coach' ? 'ACCESS COACH PORTAL' : 'LOGIN',
-                              style: const TextStyle(
+                                : const Text(
+                              'LOGIN',
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white,
@@ -447,10 +438,9 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 48),
 
-                  // Sign Up Link (only show for players)
-                  if (_loginType == 'player')
-                    GestureDetector(
-                      onTap: _isLoading
+                  // Sign Up Link
+                  GestureDetector(
+                    onTap: _isLoading
                           ? null
                           : () {
                         Navigator.push(
@@ -526,118 +516,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLoginTypeSelection() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _loginType = 'player';
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: _loginType == 'player' ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: _loginType == 'player'
-                      ? [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.person,
-                      size: 18,
-                      color: _loginType == 'player'
-                          ? const Color(0xFFFF8A50)
-                          : Colors.grey[600],
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Player',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _loginType == 'player'
-                            ? const Color(0xFFFF8A50)
-                            : Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _loginType = 'coach';
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: _loginType == 'coach' ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: _loginType == 'coach'
-                      ? [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.school,
-                      size: 18,
-                      color: _loginType == 'coach'
-                          ? const Color(0xFFFF8A50)
-                          : Colors.grey[600],
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Coach',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _loginType == 'coach'
-                            ? const Color(0xFFFF8A50)
-                            : Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Update your _handleLogin method in login_page.dart
+  // handleLogin method in login_page.dart
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -646,23 +525,177 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      if (_loginType == 'player') {
-        // Player login - uses users collection
-        await _authService.signInPlayerWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-        );
-      } else {
-        // Coach login - uses coaches collection
-        final result = await _authService.signInCoachWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-        );
+      // Try player login first, will auto-detect if it's a coach
+      await _authService.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
 
-        print('Coach login successful: ${result['coachData']['name']}');
+      // Check if email is verified
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null && !currentUser.emailVerified) {
+        // Sign out the user
+        await FirebaseAuth.instance.signOut();
+
+        if (mounted) {
+          // Show email verification dialog
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.orange,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Email Not Verified',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Please verify your email address before logging in.',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[700],
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue[700],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Check your email inbox for the verification link. Don\'t forget to check spam folder!',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.blue[900],
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      // Resend verification email
+                      try {
+                        // Need to sign in temporarily to send email
+                        final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+                          email: _emailController.text.trim(),
+                          password: _passwordController.text,
+                        );
+
+                        await credential.user?.sendEmailVerification();
+                        await FirebaseAuth.instance.signOut();
+
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Verification email sent! Please check your inbox.'),
+                              backgroundColor: Colors.green[400],
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        print('Error resending verification email: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: ${e.toString()}'),
+                              backgroundColor: Colors.red[400],
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    child: const Text(
+                      'Resend Email',
+                      style: TextStyle(
+                        color: Color(0xFFFF8A50),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      backgroundColor: const Color(0xFFFF8A50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        return; // Stop login process
       }
 
-      // AuthWrapper will handle navigation based on the data source
+      print('Login successful');
 
     } catch (e) {
       print('Login error: $e');
@@ -674,6 +707,30 @@ class _LoginPageState extends State<LoginPage> {
         // Check if user was actually logged in despite the error
         final currentUser = FirebaseAuth.instance.currentUser;
         if (currentUser != null) {
+          // Check email verification even in error case
+          if (!currentUser.emailVerified) {
+            await FirebaseAuth.instance.signOut();
+
+            if (mounted) {
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: const Text('Email Not Verified'),
+                    content: const Text('Please verify your email address before logging in.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            }
+            return;
+          }
+
           print('User logged in despite error: ${currentUser.uid}');
           // Don't show error - login was successful
           return;

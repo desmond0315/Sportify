@@ -6,6 +6,9 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:image/image.dart' as img;
+import 'dart:async';
+
 
 class CoachRegistrationPage extends StatefulWidget {
   const CoachRegistrationPage({Key? key}) : super(key: key);
@@ -84,6 +87,48 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
     super.dispose();
   }
 
+    Future<String?> _compressImageToBase64(File imageFile, {int maxSizeKB = 200}) async {
+    try {
+      // Read the image file
+      final bytes = await imageFile.readAsBytes();
+
+      // Decode image
+      img.Image? image = img.decodeImage(bytes);
+      if (image == null) {
+        print('Failed to decode image');
+        return null;
+      }
+
+      // Resize to a smaller dimension (e.g., 800x800 max)
+      img.Image resized = img.copyResize(
+        image,
+        width: image.width > 800 ? 800 : image.width,
+        height: image.height > 800 ? 800 : image.height,
+      );
+
+      // Compress as JPEG with quality adjustment
+      int quality = 85;
+      List<int> compressed = img.encodeJpg(resized, quality: quality);
+
+      // Reduce quality until size is acceptable
+      while (compressed.length > maxSizeKB * 1024 && quality > 20) {
+        quality -= 10;
+        compressed = img.encodeJpg(resized, quality: quality);
+        print('Reducing quality to $quality, size: ${compressed.length} bytes');
+      }
+
+      // Convert to base64
+      String base64String = base64Encode(compressed);
+
+      print('Compressed image from ${bytes.length} bytes to ${compressed.length} bytes (quality: $quality)');
+
+      return base64String;
+    } catch (e) {
+      print('Error compressing image: $e');
+      return null;
+    }
+  }
+
   Future<void> _loadUserData() async {
     final user = _auth.currentUser;
     setState(() => _isLoadingUserData = true);
@@ -128,15 +173,26 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
+        imageQuality: 60, // Initial compression
       );
 
       if (image != null) {
         final File imageFile = File(image.path);
-        final Uint8List imageBytes = await imageFile.readAsBytes();
-        final String base64String = base64Encode(imageBytes);
+
+        // Show loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compressing image...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Compress to Base64 (max 200KB)
+        final String? base64String = await _compressImageToBase64(imageFile, maxSizeKB: 200);
+
+        if (base64String == null) {
+          throw 'Failed to compress image';
+        }
 
         setState(() {
           _profileImageFile = imageFile;
@@ -144,8 +200,8 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile image selected successfully'),
+          SnackBar(
+            content: Text('Profile image selected (${(base64String.length / 1024).toStringAsFixed(0)} KB)'),
             backgroundColor: Colors.green,
           ),
         );
@@ -164,14 +220,27 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        allowedExtensions: ['jpg', 'jpeg', 'png'], // Removed PDF - images only
         allowMultiple: false,
       );
 
       if (result != null && result.files.single.path != null) {
         final File file = File(result.files.single.path!);
-        final Uint8List fileBytes = await file.readAsBytes();
-        final String base64String = base64Encode(fileBytes);
+
+        // Show loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compressing license document...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Compress to Base64 (max 300KB for license)
+        final String? base64String = await _compressImageToBase64(file, maxSizeKB: 300);
+
+        if (base64String == null) {
+          throw 'Failed to compress license image';
+        }
 
         setState(() {
           _licenseFile = file;
@@ -180,8 +249,8 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('License document selected successfully'),
+          SnackBar(
+            content: Text('License selected (${(base64String.length / 1024).toStringAsFixed(0)} KB)'),
             backgroundColor: Colors.green,
           ),
         );
@@ -200,14 +269,27 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        allowedExtensions: ['jpg', 'jpeg', 'png'], // Removed PDF - images only
         allowMultiple: false,
       );
 
       if (result != null && result.files.single.path != null) {
         final File file = File(result.files.single.path!);
-        final Uint8List fileBytes = await file.readAsBytes();
-        final String base64String = base64Encode(fileBytes);
+
+        // Show loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compressing certificate...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Compress to Base64 (max 300KB for certificate)
+        final String? base64String = await _compressImageToBase64(file, maxSizeKB: 300);
+
+        if (base64String == null) {
+          throw 'Failed to compress certificate image';
+        }
 
         setState(() {
           _certificateFile = file;
@@ -216,8 +298,8 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Certificate selected successfully'),
+          SnackBar(
+            content: Text('Certificate selected (${(base64String.length / 1024).toStringAsFixed(0)} KB)'),
             backgroundColor: Colors.green,
           ),
         );
@@ -321,18 +403,6 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
           }
         }
 
-        // Send password reset email if account was created successfully
-        if (accountCreated && userUid != null) {
-          try {
-            await FirebaseAuth.instance.sendPasswordResetEmail(
-                email: _emailController.text.trim()
-            );
-            print('Password reset email sent to coach');
-          } catch (emailError) {
-            print('Error sending password reset email: $emailError');
-            // Don't fail the whole process if email fails
-          }
-        }
       } else {
         // Use existing user's UID
         userUid = _auth.currentUser?.uid;
@@ -404,21 +474,71 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
     int attempts = 0;
     Exception? lastError;
 
+    // Calculate approximate sizes for debugging (without encoding the full document)
+    if (applicationData['profileImageBase64'] != null) {
+      final profileSize = (applicationData['profileImageBase64'].length / 1024).toStringAsFixed(2);
+      print('🖼Profile image: $profileSize KB');
+    }
+    if (applicationData['licenseBase64'] != null) {
+      final licenseSize = (applicationData['licenseBase64'].length / 1024).toStringAsFixed(2);
+      print('License: $licenseSize KB');
+    }
+    if (applicationData['certificateBase64'] != null) {
+      final certSize = (applicationData['certificateBase64'].length / 1024).toStringAsFixed(2);
+      print('Certificate: $certSize KB');
+    }
+
+    // Calculate total base64 size
+    int totalBase64Size = 0;
+    if (applicationData['profileImageBase64'] != null) {
+      totalBase64Size += (applicationData['profileImageBase64'] as String).length;
+    }
+    if (applicationData['licenseBase64'] != null) {
+      totalBase64Size += (applicationData['licenseBase64'] as String).length;
+    }
+    if (applicationData['certificateBase64'] != null) {
+      totalBase64Size += (applicationData['certificateBase64'] as String).length;
+    }
+
+    final totalSizeKB = (totalBase64Size / 1024).toStringAsFixed(2);
+    print('Total files size: $totalSizeKB KB (plus text data)');
+
     while (attempts < maxRetries) {
       try {
         attempts++;
-        print('Saving application, attempt $attempts');
+        print('⏳ Saving application, attempt $attempts/$maxRetries');
 
-        await _firestore.collection('coach_applications').doc(applicationId).set(applicationData);
+        await _firestore
+            .collection('coach_applications')
+            .doc(applicationId)
+            .set(applicationData)
+            .timeout(Duration(seconds: 30)); // Add timeout
+
+        print('Firestore write completed');
 
         // Verify the document was created
         await Future.delayed(Duration(milliseconds: 500));
-        final doc = await _firestore.collection('coach_applications').doc(applicationId).get();
+        final doc = await _firestore
+            .collection('coach_applications')
+            .doc(applicationId)
+            .get()
+            .timeout(Duration(seconds: 10)); // Add timeout
+
         if (doc.exists) {
-          print('Application saved successfully');
+          print('Application saved successfully!');
           return; // Success!
         } else {
+          print('Document verification failed - document does not exist');
           throw Exception('Application save verification failed');
+        }
+
+      } on TimeoutException catch (e) {
+        print('Timeout on attempt $attempts: $e');
+        lastError = Exception('Request timed out');
+
+        if (attempts < maxRetries) {
+          print('Retrying in ${attempts} seconds...');
+          await Future.delayed(Duration(seconds: attempts));
         }
 
       } catch (e) {
@@ -426,13 +546,14 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
         lastError = e as Exception;
 
         if (attempts < maxRetries) {
-          // Wait before retrying
-          await Future.delayed(Duration(milliseconds: 1000 * attempts));
+          print('Retrying in ${attempts} seconds...');
+          await Future.delayed(Duration(seconds: attempts));
         }
       }
     }
 
     // If we get here, all retries failed
+    print(' Failed to save application after $maxRetries attempts');
     throw lastError ?? Exception('Failed to save application after $maxRetries attempts');
   }
 
@@ -468,9 +589,7 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  _hasExistingAccount
-                      ? 'Your coach application has been submitted successfully. Our admin team will review your application within 24-48 hours. You will receive an email with further instructions once approved.'
-                      : 'Your coach application has been submitted successfully! We\'ve created your account and sent a password reset email to ${_emailController.text.trim()}. Please check your email to set your password. Our admin team will review your application within 24-48 hours.',
+                  'Your coach application has been submitted successfully! Our admin team will review your application within 24-48 hours. You will receive an email with login instructions once your application is approved.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,
@@ -940,7 +1059,7 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Upload your coaching license and certificates (PDF or Image)',
+            'Upload your coaching license and certificates (Images only: JPG, PNG)',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
@@ -950,7 +1069,7 @@ class _CoachRegistrationPageState extends State<CoachRegistrationPage> {
 
           // License Upload
           _buildFileUploadCard(
-            title: 'Coaching License',
+            title: 'Coach License',
             subtitle: 'Required - Upload your coaching license',
             fileName: _licenseFileName,
             onTap: _pickLicenseFile,

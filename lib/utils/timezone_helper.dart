@@ -1,5 +1,3 @@
-// Create this as a new file: lib/utils/timezone_helper.dart
-
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 

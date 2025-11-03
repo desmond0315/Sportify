@@ -472,7 +472,7 @@ class _UploadProofPageState extends State<UploadProofPage> {
     }
   }
 
-  // NEW: Simple upload - stores base64 directly in Firestore
+  // Simple upload - stores base64 directly in Firestore
   Future<void> _handleUpload() async {
     if (_selectedImage == null) return;
 
@@ -486,7 +486,7 @@ class _UploadProofPageState extends State<UploadProofPage> {
       final bytes = await _selectedImage!.readAsBytes();
       final base64Image = base64Encode(bytes);
 
-      print('📸 Image converted to base64 (${base64Image.length} characters)');
+      print('Image converted to base64 (${base64Image.length} characters)');
 
       // Update Firestore directly with base64 image
       await _firestore
@@ -537,7 +537,7 @@ class _UploadProofPageState extends State<UploadProofPage> {
         _showSuccessDialog();
       }
     } catch (e) {
-      print('❌ Error uploading proof: $e');
+      print('Error uploading proof: $e');
       if (mounted) {
         setState(() => _isUploading = false);
         ScaffoldMessenger.of(context).showSnackBar(

@@ -11,9 +11,10 @@ import 'notifications_page.dart';
 import 'services/notification_service.dart';
 import 'services/messaging_service.dart';
 import 'chats_list_page.dart';
-import 'search_results_page.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'venue_detail_page.dart';
+import 'tournaments_page.dart';
 
 class HomePage extends StatefulWidget {
   final String userName;
@@ -37,6 +38,7 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription<int>? _messageCountSubscription;
   String _currentUserName = '';
   String _currentUserEmail = '';
+  String? _profileImageBase64;
   int _unreadNotificationCount = 0;
   int _unreadMessageCount = 0;
 
@@ -79,6 +81,7 @@ class _HomePageState extends State<HomePage> {
                 user.email?.split('@')[0] ??
                 'User';
             _currentUserRole = userData?['role'] ?? 'player';
+            _profileImageBase64 = userData?['profileImageBase64']; // ADDED: Load profile image
           });
         }
       });
@@ -118,7 +121,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _fetchTopVenues() async {
     try {
       setState(() {
-        _isLoadingVenues = true; // Show loading when refreshing
+        _isLoadingVenues = true;
       });
 
       final venuesSnapshot = await FirebaseFirestore.instance
@@ -132,10 +135,7 @@ class _HomePageState extends State<HomePage> {
       for (var doc in venuesSnapshot.docs) {
         Map<String, dynamic> venueData = doc.data();
         venueData['id'] = doc.id;
-
-        // DEBUG: Print venue ratings
         print('DEBUG: Venue ${venueData['name']} - Rating: ${venueData['rating']}, Total Reviews: ${venueData['totalReviews']}');
-
         venues.add(venueData);
       }
 
@@ -158,7 +158,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh venues when returning to this page
     _fetchTopVenues();
   }
 
@@ -176,7 +175,6 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    // Check if it's a base64 data URL
     if (imageUrl.startsWith('data:image')) {
       try {
         final base64String = imageUrl.split(',')[1];
@@ -205,7 +203,6 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // Regular network URL
     return Image.network(
       imageUrl,
       height: height,
@@ -229,7 +226,6 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
-            // Main content
             Expanded(
               child: RefreshIndicator(
                 color: const Color(0xFFFF8A50),
@@ -241,27 +237,14 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header with profile and notification
                       _buildHeader(),
-
                       const SizedBox(height: 30),
-
-                      // Search bar
                       _buildSearchBar(),
-
                       const SizedBox(height: 35),
-
-                      // Sports categories
                       _buildSportsCategories(),
-
                       const SizedBox(height: 40),
-
-                      // Main action buttons (Coaching, Booking, Tournament)
                       _buildMainActionButtons(),
-
                       const SizedBox(height: 40),
-
-                      // Venues near you section
                       _buildVenuesSection(),
                     ],
                   ),
@@ -275,47 +258,89 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Build profile avatar with actual image
+  Widget _buildProfileAvatar() {
+    if (_profileImageBase64 != null && _profileImageBase64!.isNotEmpty) {
+      try {
+        final Uint8List imageBytes = base64Decode(_profileImageBase64!);
+        return Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0xFFFF8A50).withOpacity(0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF8A50).withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: Image.memory(
+              imageBytes,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return _buildDefaultAvatar();
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        return _buildDefaultAvatar();
+      }
+    } else {
+      return _buildDefaultAvatar();
+    }
+  }
+
+  Widget _buildDefaultAvatar() {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF8A50).withOpacity(0.2),
+            const Color(0xFFE8751A).withOpacity(0.1),
+          ],
+        ),
+        border: Border.all(
+          color: const Color(0xFFFF8A50).withOpacity(0.3),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFF8A50).withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.person,
+        color: Color(0xFFFF8A50),
+        size: 24,
+      ),
+    );
+  }
 
   Widget _buildHeader() {
     return Row(
       children: [
-        // Profile circle (tappable for profile/logout menu)
+        // UPDATED: Use the new profile avatar widget
         GestureDetector(
           onTap: _showProfileMenu,
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFFFF8A50).withOpacity(0.2),
-                  const Color(0xFFE8751A).withOpacity(0.1),
-                ],
-              ),
-              border: Border.all(
-                color: const Color(0xFFFF8A50).withOpacity(0.3),
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFF8A50).withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.person,
-              color: Color(0xFFFF8A50),
-              size: 24,
-            ),
-          ),
+          child: _buildProfileAvatar(),
         ),
 
         const SizedBox(width: 16),
 
-        // Greeting text - now uses real-time data
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,7 +365,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
 
-        // Notification bell with badge
         GestureDetector(
           onTap: _handleNotificationTap,
           child: Container(
@@ -366,7 +390,6 @@ class _HomePageState extends State<HomePage> {
                     size: 20,
                   ),
                 ),
-                // Badge for unread notifications
                 if (_unreadNotificationCount > 0)
                   Positioned(
                     right: 8,
@@ -463,7 +486,6 @@ class _HomePageState extends State<HomePage> {
           }
         },
         onTap: () {
-          // Alternative: Navigate to search page when tapped
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -478,7 +500,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildSportsCategories() {
     final sports = [
       {'name': 'Badminton', 'icon': Icons.sports_tennis, 'color': const Color(0xFF4CAF50)},
-      {'name': 'Football', 'icon': Icons.sports_soccer, 'color': const Color(0xFF2196F3)},
+      {'name': 'Futsal', 'icon': Icons.sports_soccer, 'color': const Color(0xFF2196F3)},
       {'name': 'Basketball', 'icon': Icons.sports_basketball, 'color': const Color(0xFFFF9800)},
       {'name': 'Pickleball', 'icon': Icons.sports_baseball, 'color': const Color(0xFF9C27B0)},
       {'name': 'Hockey', 'icon': Icons.sports_hockey, 'color': const Color(0xFFE91E63)},
@@ -644,7 +666,6 @@ class _HomePageState extends State<HomePage> {
   Widget _buildVenuesSection() {
     return Column(
       children: [
-        // Section header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -672,7 +693,6 @@ class _HomePageState extends State<HomePage> {
 
         const SizedBox(height: 20),
 
-        // Venues carousel
         _isLoadingVenues
             ? Container(
           height: 260,
@@ -769,7 +789,6 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Venue image
             Container(
               height: 140,
               width: double.infinity,
@@ -783,13 +802,11 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Venue details
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Rating and price
                   Row(
                     children: [
                       Container(
@@ -804,7 +821,7 @@ class _HomePageState extends State<HomePage> {
                             Icon(Icons.star, color: Colors.amber[700], size: 14),
                             const SizedBox(width: 4),
                             Text(
-                              _formatRating(venue['rating']), // Format rating properly
+                              _formatRating(venue['rating']),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -813,7 +830,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '(${venue['totalReviews'] ?? 0})', // Show review count
+                              '(${venue['totalReviews'] ?? 0})',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w500,
@@ -837,7 +854,6 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 8),
 
-                  // Venue name
                   Text(
                     venue['name'] ?? 'Unknown Venue',
                     style: const TextStyle(
@@ -851,7 +867,6 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 4),
 
-                  // Location
                   Row(
                     children: [
                       Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[500]),
@@ -869,7 +884,6 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 8),
 
-                  // Sports tags
                   if (sports.isNotEmpty)
                     Wrap(
                       spacing: 6,
@@ -1012,7 +1026,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Event handlers
   void _handleSearch(String query) {
     if (query.trim().isNotEmpty) {
       Navigator.push(
@@ -1026,7 +1039,6 @@ class _HomePageState extends State<HomePage> {
 
   void _handleSportTap(String sport) {
     print('Tapped on sport: $sport');
-    // Navigate to search page with the selected sport as query
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1054,8 +1066,12 @@ class _HomePageState extends State<HomePage> {
         );
         break;
       case 'Tournaments':
-        print('Navigate to Tournaments');
-        // TODO: Navigate to tournaments page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const TournamentsPage(),
+          ),
+        );
         break;
     }
   }
@@ -1070,9 +1086,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleVenueTap(dynamic venue) {
-    // venue can be either String (old behavior) or Map<String, dynamic> (new behavior)
     if (venue is Map<String, dynamic>) {
-      // Navigate directly to venue detail with the venue data
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1080,7 +1094,6 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } else {
-      // Fallback: navigate to venues list
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1097,10 +1110,8 @@ class _HomePageState extends State<HomePage> {
 
     switch (index) {
       case 0:
-      // Already on Home
         break;
       case 1:
-      // Navigate to Search
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1109,7 +1120,6 @@ class _HomePageState extends State<HomePage> {
         );
         break;
       case 2:
-      // Navigate to Messages
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1118,7 +1128,6 @@ class _HomePageState extends State<HomePage> {
         );
         break;
       case 3:
-      // Navigate to My Bookings
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1150,11 +1159,10 @@ class _HomePageState extends State<HomePage> {
       ),
       builder: (BuildContext context) {
         return Container(
-          height: MediaQuery.of(context).size.height * 0.53, // Fixed height instead of DraggableScrollableSheet
+          height: MediaQuery.of(context).size.height * 0.53,
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // Handle bar
               Container(
                 width: 40,
                 height: 4,
@@ -1166,10 +1174,46 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 20),
 
-              // User info section (fixed at top)
+              // Show profile image in menu too
               Row(
                 children: [
-                  Container(
+                  _profileImageBase64 != null && _profileImageBase64!.isNotEmpty
+                      ? Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFFF8A50).withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: Image.memory(
+                        base64Decode(_profileImageBase64!),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFFF8A50).withOpacity(0.2),
+                                  const Color(0xFFE8751A).withOpacity(0.1),
+                                ],
+                              ),
+                            ),
+                            child: Icon(
+                              _currentUserRole == 'coach' ? Icons.school : Icons.person,
+                              color: const Color(0xFFFF8A50),
+                              size: 30,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  )
+                      : Container(
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
@@ -1240,7 +1284,6 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 30),
 
-              // Menu options - scrollable to prevent overflow
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
@@ -1305,7 +1348,6 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
 
-                      // Show coach-specific options for coaches only
                       if (_currentUserRole == 'coach')
                         _buildMenuOption(
                           icon: Icons.dashboard_outlined,
@@ -1318,7 +1360,6 @@ class _HomePageState extends State<HomePage> {
                           isHighlighted: true,
                         ),
 
-                      // Logout button - same styling as other menu items
                       _buildMenuOption(
                         icon: Icons.logout,
                         title: 'Logout',
@@ -1444,7 +1485,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
   }
-  // Helper method to format rating
+
   String _formatRating(dynamic rating) {
     if (rating == null) return '0.0';
 
